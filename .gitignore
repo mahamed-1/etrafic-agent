@@ -30,6 +30,35 @@ yarn-error.*
 # local env files
 .env*.local
 .env
+.env.test
 
 # typescript
 *.tsbuildinfo
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Test files
+*test*.js
+*test*.ts
+test-*.js
+test-*.ts
+
+# Build files
+build/
+dist/
+
+# Temporary files
+*.tmp
+*.temp
+.bolt/
+
+# Documentation drafts
+docs/drafts/
+*.draft.md
+
+# VS Code workspace files
+*.code-workspace

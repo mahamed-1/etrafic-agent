@@ -66,7 +66,7 @@ export default function ControlScreen() {
 
       // Gestion spécifique des erreurs de recherche de véhicule
       if (error?.response?.status === 500) {
-        errorMessage = `La plaque "${plateNumber}" n'existe pas dans la base de données.`;
+        errorMessage = `Nous n'avons trouvé aucun véhicule correspondant à la plaque "${plateNumber}".`;
         errorType = 'warning';
       } else if (error?.response?.status === 404) {
         errorMessage = `Aucun véhicule trouvé avec la plaque "${plateNumber}".`;

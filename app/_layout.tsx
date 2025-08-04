@@ -2,13 +2,13 @@ import { useEffect } from 'react';
 import { Stack } from 'expo-router';
 import { LocationProvider } from '../contexts/LocationContext';
 import { StatusBar } from 'expo-status-bar';
-import { useFrameworkReady } from '@/hooks/useFrameworkReady';
+// import { useFrameworkReady } from '@/hooks/useFrameworkReady';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { AuthGuard } from '@/components/AuthGuard';
 // import FlashMessage from 'react-native-flash-message';
 
 export default function RootLayout() {
-  useFrameworkReady();
+  // useFrameworkReady();
 
   return (
     <AuthProvider>
