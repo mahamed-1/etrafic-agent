@@ -1,285 +1,470 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  TextInput,
-  TouchableOpacity,
-  Alert,
-  ScrollView,
+    View,
+    Text,
+    StyleSheet,
+    ScrollView,
+    TouchableOpacity,
 } from 'react-native';
-import { Camera, ScanLine } from 'lucide-react-native';
+import {
+    AlertTriangle, DollarSign, Calendar,
+    MapPin, User, Car, Clock, ChevronRight,
+    FileX, Shield
+} from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 
 import { Header } from '@/components/Header';
 import { Card } from '@/components/Card';
-import { Button } from '@/components/Button';
 import { COLORS } from '@/styles/colors';
 import { TYPOGRAPHY } from '@/styles/typography';
 import { SPACING, BORDER_RADIUS } from '@/styles/spacing';
-import { PLATE_PATTERNS } from '@/constants';
-import { formatPlateNumber } from '@/utils/vehicleUtils';
+
+interface VehiculeRecherche {
+    id: string;
+    numeroPlaque: string;
+    marque: string;
+    modele: string;
+    couleur: string;
+    proprietaire: string;
+    telephone?: string;
+    pvNonPayes: number;
+    montantTotal: number;
+    derniereInfraction: string;
+    dateInfraction: string;
+    statut: 'amende_impayee' | 'vol_signale';
+    priorite: 'haute' | 'moyenne' | 'faible';
+    zone: string;
+}
+
+interface CategorieVehicule {
+    id: string;
+    titre: string;
+    description: string;
+    count: number;
+    couleur: string;
+    icone: React.ComponentType<any>;
+    statut: 'amende_impayee' | 'vol_signale';
+}
+
+// Données statiques de véhicules recherchés
+const VEHICULES_RECHERCHES: VehiculeRecherche[] = [
+    {
+        id: '1',
+        numeroPlaque: 'AA-123-CD',
+        marque: 'Toyota',
+        modele: 'Corolla',
+        couleur: 'Blanc',
+        proprietaire: 'Kabila Jean-Pierre',
+        telephone: '+243 99 123 4567',
+        pvNonPayes: 3,
+        montantTotal: 75000,
+        derniereInfraction: 'Excès de vitesse',
+        dateInfraction: '2025-01-20',
+        statut: 'amende_impayee',
+        priorite: 'haute',
+        zone: 'Lubumbashi Centre'
+    },
+    {
+        id: '2',
+        numeroPlaque: 'BB-456-EF',
+        marque: 'Honda',
+        modele: 'Civic',
+        couleur: 'Noir',
+        proprietaire: 'Mbuyi Marie Claire',
+        telephone: '+243 97 234 5678',
+        pvNonPayes: 2,
+        montantTotal: 45000,
+        derniereInfraction: 'Stationnement interdit',
+        dateInfraction: '2025-01-25',
+        statut: 'amende_impayee',
+        priorite: 'moyenne',
+        zone: 'Kampemba'
+    },
+    {
+        id: '3',
+        numeroPlaque: 'CC-789-GH',
+        marque: 'Nissan',
+        modele: 'Sentra',
+        couleur: 'Rouge',
+        proprietaire: 'Tshimanga Paul',
+        pvNonPayes: 5,
+        montantTotal: 125000,
+        derniereInfraction: 'Conduite sans permis',
+        dateInfraction: '2025-01-15',
+        statut: 'amende_impayee',
+        priorite: 'haute',
+        zone: 'Ruashi'
+    },
+    {
+        id: '4',
+        numeroPlaque: 'DD-234-GH',
+        marque: 'Ford',
+        modele: 'Focus',
+        couleur: 'Bleu',
+        proprietaire: 'Ngozi Patrick',
+        telephone: '+243 98 345 6789',
+        pvNonPayes: 1,
+        montantTotal: 20000,
+        derniereInfraction: 'Vitesse excessive',
+        dateInfraction: '2025-01-28',
+        statut: 'amende_impayee',
+        priorite: 'faible',
+        zone: 'Annexe'
+    },
+    {
+        id: '5',
+        numeroPlaque: 'EE-345-KL',
+        marque: 'Kia',
+        modele: 'Rio',
+        couleur: 'Gris',
+        proprietaire: 'Mukendi Joseph',
+        pvNonPayes: 4,
+        montantTotal: 95000,
+        derniereInfraction: 'Refus d\'obtempérer',
+        dateInfraction: '2025-01-22',
+        statut: 'amende_impayee',
+        priorite: 'haute',
+        zone: 'Kenya'
+    },
+    {
+        id: '6',
+        numeroPlaque: 'FF-678-MN',
+        marque: 'Mazda',
+        modele: '3',
+        couleur: 'Vert',
+        proprietaire: 'Kalala Esperance',
+        telephone: '+243 96 456 7890',
+        pvNonPayes: 0,
+        montantTotal: 0,
+        derniereInfraction: 'Vol signalé',
+        dateInfraction: '2025-01-26',
+        statut: 'vol_signale',
+        priorite: 'haute',
+        zone: 'Katuba'
+    },
+    {
+        id: '7',
+        numeroPlaque: 'GG-901-OP',
+        marque: 'Volkswagen',
+        modele: 'Polo',
+        couleur: 'Jaune',
+        proprietaire: 'Ilunga Samuel',
+        pvNonPayes: 0,
+        montantTotal: 0,
+        derniereInfraction: 'Vol signalé',
+        dateInfraction: '2025-01-12',
+        statut: 'vol_signale',
+        priorite: 'haute',
+        zone: 'Kamalondo'
+    }
+];
 
 export default function ScanScreen() {
-  const [scannedPlate, setScannedPlate] = useState('');
-  const [isScanning, setIsScanning] = useState(false);
-  const router = useRouter();
+    const router = useRouter();
 
-  const handleScan = async () => {
-    if (!scannedPlate) {
-      Alert.alert('Erreur', 'Veuillez saisir un numéro de plaque');
-      return;
-    }
+    // Calculer les statistiques par catégorie
+    const getCategories = (): CategorieVehicule[] => {
+        const pvNonPayes = VEHICULES_RECHERCHES.filter(v => v.statut === 'amende_impayee');
+        const volsSignales = VEHICULES_RECHERCHES.filter(v => v.statut === 'vol_signale');
+        // const rechercheActive = VEHICULES_RECHERCHES.filter(v => v.statut === 'recherche_active');
 
-    setIsScanning(true);
-    
-    // Simulation du processus de scan
-    setTimeout(() => {
-      setIsScanning(false);
-      Alert.alert(
-        'Plaque scannée',
-        `Plaque ${scannedPlate} détectée. Procéder au contrôle ?`,
-        [
-          { text: 'Annuler', style: 'cancel' },
-          { 
-            text: 'Contrôler', 
-            onPress: () => {
-              router.push({
-                pathname: '/control',
-                params: { plate: scannedPlate }
-              });
+        return [
+            {
+                id: 'pv_non_payes',
+                titre: 'PV Non Payés',
+                description: 'Véhicules avec amendes impayées',
+                count: pvNonPayes.length,
+                couleur: COLORS.warning,
+                icone: DollarSign,
+                statut: 'amende_impayee'
+            },
+            {
+                id: 'vols_signales',
+                titre: 'Véhicules Volés Signalés',
+                description: 'Véhicules déclarés volés',
+                count: volsSignales.length,
+                couleur: '#8B0000', // Rouge foncé
+                icone: Shield,
+                statut: 'vol_signale'
             }
-          }
-        ]
-      );
-    }, 1500);
-  };
+        ];
+    };
 
-  return (
-    <View style={styles.container}>
-      <Header 
-        title="Scanner Plaque"
-        subtitle="Pointez la caméra vers la plaque"
-      />
+    const categories = getCategories();
+    const totalVehicules = VEHICULES_RECHERCHES.length;
+    const totalMontant = VEHICULES_RECHERCHES.reduce((sum, v) => sum + v.montantTotal, 0);
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Camera Simulation */}
-        <Card style={styles.cameraCard}>
-          <View style={styles.cameraFrame}>
-            <View style={styles.scanFrame}>
-              <Camera size={48} color={COLORS.surface} />
-              <Text style={styles.scanText}>
-                {isScanning ? 'Analyse en cours...' : 'Centrez la plaque dans le cadre'}
-              </Text>
-            </View>
-          </View>
-          
-          {/* Scanning animation */}
-          {isScanning && (
-            <View style={styles.scanningLine} />
-          )}
-        </Card>
+    const handleCategoryPress = (category: CategorieVehicule) => {
+        // Naviguer vers la page de détails avec le statut
+        router.push({
+            pathname: '/vehicle-details' as any,
+            params: {
+                statut: category.statut,
+                titre: category.titre
+            }
+        });
+    };
 
-        {/* Manual Input */}
-        <Card>
-          <Text style={styles.inputTitle}>Saisie Manuelle</Text>
-          <TextInput
-            style={styles.plateInput}
-            placeholder="Ex: DJ-2587-AB"
-            value={scannedPlate}
-            onChangeText={(text) => setScannedPlate(formatPlateNumber(text))}
-            maxLength={12}
-            autoCapitalize="characters"
-          />
-          
-          <Button
-            title={isScanning ? 'Analyse...' : 'Vérifier Véhicule'}
-            onPress={handleScan}
-            disabled={isScanning || !scannedPlate}
-            icon={<ScanLine size={20} color={COLORS.surface} />}
-          />
-        </Card>
+    return (
+        <View style={styles.container}>
+            <Header title="Véhicules Recherchés" />
 
-        {/* Plate Patterns */}
-        <Card>
-          <Text style={styles.patternsTitle}>Formats reconnus</Text>
-          {PLATE_PATTERNS.map((pattern) => (
-            <View key={pattern.type} style={styles.patternItem}>
-              <Text style={styles.patternFormat}>{pattern.pattern}</Text>
-              <Text style={styles.patternDescription}>{pattern.description}</Text>
-            </View>
-          ))}
-        </Card>
+            <ScrollView
+                style={styles.content}
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={styles.scrollContainer}
+            >
+                {/* Statistiques générales */}
+                <Card style={styles.summaryCard}>
+                    <Text style={styles.summaryTitle}>Résumé Général</Text>
+                    <View style={styles.summaryStats}>
+                        <View style={styles.summaryItem}>
+                            <Text style={[styles.summaryNumber, { color: COLORS.primary }]}>
+                                {totalVehicules}
+                            </Text>
+                            <Text style={styles.summaryLabel}>Total Véhicules</Text>
+                        </View>
+                    </View>
+                </Card>
 
-        {/* Quick Actions */}
-        <Card>
-          <Text style={styles.quickActionsTitle}>Actions rapides</Text>
-          <View style={styles.quickActionsGrid}>
-            {['DJ-', 'CD-', 'ET-', 'US-'].map((prefix) => (
-              <TouchableOpacity 
-                key={prefix}
-                style={styles.quickActionButton}
-                onPress={() => setScannedPlate(prefix)}
-              >
-                <Text style={styles.quickActionText}>{prefix}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </Card>
+                {/* Catégories de véhicules */}
+                <Text style={styles.sectionTitle}>Catégories</Text>
 
-        {/* Recent Scans */}
-        <Card style={styles.lastCard}>
-          <Text style={styles.recentScansTitle}>Scans récents</Text>
-          {[
-            { plate: 'DJ-1234-AB', time: 'Il y a 15 min' },
-            { plate: 'ET-5678-CD', time: 'Il y a 32 min' },
-            { plate: 'CD-901-FR', time: 'Il y a 1h 15min' }
-          ].map((scan, index) => (
-            <TouchableOpacity key={index} style={styles.recentScanItem}>
-              <Text style={styles.recentScanPlate}>{scan.plate}</Text>
-              <Text style={styles.recentScanTime}>{scan.time}</Text>
-            </TouchableOpacity>
-          ))}
-        </Card>
-      </ScrollView>
-    </View>
-  );
+                {categories.map((category) => (
+                    <TouchableOpacity
+                        key={category.id}
+                        style={styles.categoryCard}
+                        onPress={() => handleCategoryPress(category)}
+                        activeOpacity={0.7}
+                    >
+                        <Card style={{
+                            ...styles.categoryContent,
+                            borderLeftColor: category.couleur,
+                            backgroundColor: COLORS.surface,
+                        }}>
+                            <View style={styles.categoryHeader}>
+                                <View style={[
+                                    styles.categoryIcon,
+                                    { backgroundColor: category.couleur + '15' }
+                                ]}>
+                                    <category.icone size={20} color={category.couleur} />
+                                </View>
+                                <View style={styles.categoryInfo}>
+                                    <Text style={styles.categoryTitle}>{category.titre}</Text>
+                                    <Text style={styles.categoryDescription}>{category.description}</Text>
+                                </View>
+                                <View style={styles.categoryMeta}>
+                                    <Text style={[styles.categoryCount, { color: category.couleur }]}>
+                                        {category.count}
+                                    </Text>
+                                    <View style={styles.chevronContainer}>
+                                        <ChevronRight size={16} color={COLORS.textLight} />
+                                    </View>
+                                </View>
+                            </View>
+
+                            {category.count > 0 && (
+                                <View style={styles.categoryFooter}>
+                                    <View style={styles.categoryStats}>
+                                        <Text style={styles.categoryStatsText}>
+                                            Cliquez pour voir les détails
+                                        </Text>
+                                    </View>
+                                </View>
+                            )}
+                        </Card>
+                    </TouchableOpacity>
+                ))}
+
+            </ScrollView>
+        </View>
+    );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
-  content: {
-    flex: 1,
-    padding: SPACING.lg,
-  },
-  cameraCard: {
-    backgroundColor: COLORS.gray800,
-    height: 250,
-    marginBottom: SPACING.sectionSpacing,
-    position: 'relative',
-    overflow: 'hidden',
-  },
-  cameraFrame: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  scanFrame: {
-    width: 200,
-    height: 80,
-    borderWidth: 2,
-    borderColor: COLORS.surface,
-    borderStyle: 'dashed',
-    borderRadius: BORDER_RADIUS.md,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  scanText: {
-    ...TYPOGRAPHY.caption,
-    color: COLORS.surface,
-    marginTop: SPACING.sm,
-    textAlign: 'center',
-  },
-  scanningLine: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 2,
-    backgroundColor: COLORS.success,
-    opacity: 0.8,
-  },
-  inputTitle: {
-    ...TYPOGRAPHY.h4,
-    marginBottom: SPACING.lg,
-    color: COLORS.textPrimary,
-  },
-  plateInput: {
-    borderWidth: 1,
-    borderColor: COLORS.gray300,
-    borderRadius: BORDER_RADIUS.md,
-    padding: SPACING.lg,
-    fontSize: 18,
-    fontFamily: 'monospace',
-    textAlign: 'center',
-    backgroundColor: COLORS.gray50,
-    marginBottom: SPACING.lg,
-  },
-  patternsTitle: {
-    ...TYPOGRAPHY.body,
-    fontWeight: '600',
-    marginBottom: SPACING.md,
-    color: COLORS.textPrimary,
-  },
-  patternItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: SPACING.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.gray100,
-  },
-  patternFormat: {
-    ...TYPOGRAPHY.caption,
-    fontFamily: 'monospace',
-    color: COLORS.primary,
-    fontWeight: '600',
-  },
-  patternDescription: {
-    ...TYPOGRAPHY.caption,
-    color: COLORS.textSecondary,
-  },
-  quickActionsTitle: {
-    ...TYPOGRAPHY.body,
-    fontWeight: '600',
-    marginBottom: SPACING.md,
-    color: COLORS.textPrimary,
-  },
-  quickActionsGrid: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  quickActionButton: {
-    backgroundColor: COLORS.gray100,
-    borderRadius: BORDER_RADIUS.md,
-    padding: SPACING.md,
-    flex: 1,
-    marginHorizontal: 4,
-    alignItems: 'center',
-  },
-  quickActionText: {
-    ...TYPOGRAPHY.body,
-    fontWeight: '600',
-    color: COLORS.primary,
-  },
-  recentScansTitle: {
-    ...TYPOGRAPHY.body,
-    fontWeight: '600',
-    marginBottom: SPACING.md,
-    color: COLORS.textPrimary,
-  },
-  recentScanItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: SPACING.md,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.gray100,
-  },
-  recentScanPlate: {
-    ...TYPOGRAPHY.body,
-    fontWeight: '600',
-    color: COLORS.textPrimary,
-    fontFamily: 'monospace',
-  },
-  recentScanTime: {
-    ...TYPOGRAPHY.caption,
-    color: COLORS.textSecondary,
-  },
-  lastCard: {
-    marginBottom: 80,
-  },
+    container: {
+        flex: 1,
+        backgroundColor: COLORS.background,
+    },
+    content: {
+        flex: 1,
+        padding: SPACING.lg,
+    },
+    scrollContainer: {
+        paddingBottom: SPACING.xl,
+    },
+    summaryCard: {
+        marginBottom: SPACING.lg,
+        paddingVertical: SPACING.md,
+        paddingHorizontal: SPACING.lg,
+        borderRadius: BORDER_RADIUS.lg,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+        elevation: 3,
+    },
+    summaryTitle: {
+        ...TYPOGRAPHY.body,
+        fontSize: 16,
+        fontWeight: '600',
+        color: COLORS.textPrimary,
+        marginBottom: SPACING.sm,
+        textAlign: 'center',
+    },
+    summaryStats: {
+        flexDirection: 'row',
+        justifyContent: 'space-around',
+        paddingHorizontal: SPACING.sm,
+    },
+    summaryItem: {
+        alignItems: 'center',
+        flex: 1,
+    },
+    summaryNumber: {
+        ...TYPOGRAPHY.h3,
+        fontSize: 24,
+        fontWeight: 'bold',
+    },
+    summaryLabel: {
+        ...TYPOGRAPHY.caption,
+        fontSize: 11,
+        color: COLORS.textSecondary,
+        marginTop: SPACING.xs,
+        textAlign: 'center',
+    },
+    infoCard: {
+        backgroundColor: '#fff3cd',
+        borderColor: COLORS.warning,
+        borderWidth: 1,
+        marginBottom: SPACING.lg,
+    },
+    infoHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: SPACING.sm,
+    },
+    infoTitle: {
+        ...TYPOGRAPHY.body,
+        fontWeight: '600',
+        color: COLORS.textPrimary,
+        marginLeft: SPACING.sm,
+    },
+    infoText: {
+        ...TYPOGRAPHY.body,
+        color: COLORS.textSecondary,
+        lineHeight: 20,
+    },
+    sectionTitle: {
+        ...TYPOGRAPHY.h4,
+        fontSize: 18,
+        fontWeight: '600',
+        color: COLORS.textPrimary,
+        marginBottom: SPACING.md,
+        marginTop: SPACING.sm,
+    },
+    categoryCard: {
+        marginBottom: SPACING.md,
+        borderRadius: BORDER_RADIUS.lg,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.08,
+        shadowRadius: 3,
+        elevation: 2,
+    },
+    categoryContent: {
+        borderLeftWidth: 4,
+        padding: 0,
+        borderRadius: BORDER_RADIUS.lg,
+        overflow: 'hidden',
+    },
+    categoryHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: SPACING.md,
+        paddingHorizontal: SPACING.lg,
+    },
+    categoryIcon: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginRight: SPACING.md,
+        borderWidth: 1,
+        borderColor: 'transparent',
+    },
+    categoryInfo: {
+        flex: 1,
+        paddingRight: SPACING.sm,
+    },
+    categoryTitle: {
+        ...TYPOGRAPHY.h3,
+        fontSize: 15,
+        fontWeight: '500',
+        color: COLORS.textPrimary,
+        marginBottom: SPACING.xs,
+    },
+    categoryDescription: {
+        ...TYPOGRAPHY.caption,
+        fontSize: 12,
+        color: COLORS.textSecondary,
+        lineHeight: 16,
+    },
+    categoryMeta: {
+        alignItems: 'center',
+        justifyContent: 'center',
+        minWidth: 60,
+    },
+    categoryCount: {
+        ...TYPOGRAPHY.h4,
+        fontSize: 20,
+        fontWeight: '500',
+        marginBottom: SPACING.xs,
+    },
+    chevronContainer: {
+        padding: SPACING.xs,
+        borderRadius: 12,
+        backgroundColor: COLORS.gray50,
+    },
+    categoryFooter: {
+        borderTopWidth: 1,
+        borderTopColor: COLORS.gray100,
+        paddingHorizontal: SPACING.lg,
+        paddingVertical: SPACING.sm,
+        backgroundColor: COLORS.gray50,
+    },
+    categoryStats: {
+        alignItems: 'center',
+    },
+    categoryStatsText: {
+        ...TYPOGRAPHY.caption,
+        fontSize: 11,
+        color: COLORS.textSecondary,
+        fontStyle: 'italic',
+    },
+    helpCard: {
+        marginTop: SPACING.lg,
+        marginBottom: SPACING.xl,
+    },
+    helpHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: SPACING.md,
+    },
+    helpTitle: {
+        ...TYPOGRAPHY.body,
+        fontWeight: '600',
+        color: COLORS.textPrimary,
+        marginLeft: SPACING.sm,
+    },
+    helpContent: {
+        paddingLeft: SPACING.sm,
+    },
+    helpText: {
+        ...TYPOGRAPHY.body,
+        color: COLORS.textSecondary,
+        marginBottom: SPACING.xs,
+        lineHeight: 20,
+    },
 });

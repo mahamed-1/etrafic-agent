@@ -1,16 +1,18 @@
+
 import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TextInput,
-  TouchableOpacity,
-  Alert,
   ScrollView,
+  Alert,
+  TouchableOpacity,
 } from 'react-native';
-import { 
-  User, CircleCheck as CheckCircle, Circle as XCircle, 
-  CircleAlert as AlertCircle, Car, Shield, Calendar, MapPin 
+import {
+  User, FileText, Car, Calendar, MapPin, Shield,
+  CircleCheck as CheckCircle, Circle as XCircle,
+  CircleAlert as AlertCircle, ScanLine, Camera, X
 } from 'lucide-react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 
@@ -21,42 +23,66 @@ import { LoadingSpinner } from '@/components/LoadingSpinner';
 import { COLORS } from '@/styles/colors';
 import { TYPOGRAPHY } from '@/styles/typography';
 import { SPACING, BORDER_RADIUS } from '@/styles/spacing';
-import { mockVerifyVehicle, getTypeColor, getTypeLabel, VehicleData } from '@/utils/vehicleUtils';
+import { getVehicleDetails, verifyVehicle, type VehicleDetails, type VehicleVerification } from '@/services/vehicleService';
+import { formatPlateNumber } from '@/utils/vehicleUtils';
+import { useLocationContext } from '@/contexts/LocationContext';
+import { useAuth } from '@/contexts/AuthContext';
 
 export default function ControlScreen() {
-  const [scannedPlate, setScannedPlate] = useState('');
-  const [controlType, setControlType] = useState('');
-  const [vehicleData, setVehicleData] = useState<VehicleData | null>(null);
+  const [plate, setPlate] = useState('');
+  const [vehicleDetails, setVehicleDetails] = useState<VehicleDetails | null>(null);
+  const [verification, setVerification] = useState<VehicleVerification | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isScanning, setIsScanning] = useState(false);
+  const [error, setError] = useState<{ message: string, type: 'warning' | 'error' } | null>(null);
   const router = useRouter();
   const params = useLocalSearchParams();
 
+  // Contextes pour les données dynamiques
+  const { address: locationAddress, loading: locationLoading } = useLocationContext();
+  const { user } = useAuth();
+
   useEffect(() => {
     if (params.plate) {
-      setScannedPlate(params.plate as string);
-      handleVerifyVehicle(params.plate as string);
+      setPlate(params.plate as string);
+      handleSearchVehicle(params.plate as string);
     }
   }, [params.plate]);
 
-  const handleVerifyVehicle = async (plate: string) => {
+  const handleSearchVehicle = async (plateNumber: string) => {
     setIsLoading(true);
+    setError(null); // Clear previous errors
     try {
-      const data = await mockVerifyVehicle(plate);
-      setVehicleData(data);
-    } catch (error) {
-      Alert.alert('Erreur', 'Impossible de vérifier le véhicule');
+      const [details, verificationData] = await Promise.all([
+        getVehicleDetails(plateNumber),
+        verifyVehicle(plateNumber)
+      ]);
+
+      setVehicleDetails(details);
+      setVerification(verificationData);
+    } catch (error: any) {
+      let errorMessage = 'Une erreur inconnue est survenue';
+      let errorType: 'warning' | 'error' = 'error';
+
+      // Gestion spécifique des erreurs de recherche de véhicule
+      if (error?.response?.status === 500) {
+        errorMessage = `La plaque "${plateNumber}" n'existe pas dans la base de données.`;
+        errorType = 'warning';
+      } else if (error?.response?.status === 404) {
+        errorMessage = `Aucun véhicule trouvé avec la plaque "${plateNumber}".`;
+        errorType = 'warning';
+      } else if (error?.response?.data?.message) {
+        errorMessage = error.response.data.message;
+      } else if (error?.message && error.message !== '[object Object]') {
+        errorMessage = error.message;
+      } else if (error?.response?.statusText) {
+        errorMessage = `Erreur ${error.response.status}: ${error.response.statusText}`;
+      }
+
+      setError({ message: errorMessage, type: errorType });
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const handleStartControl = async () => {
-    if (!scannedPlate || !controlType) {
-      Alert.alert('Erreur', 'Veuillez remplir tous les champs');
-      return;
-    }
-    
-    await handleVerifyVehicle(scannedPlate);
   };
 
   const handleControlOK = () => {
@@ -65,8 +91,8 @@ export default function ControlScreen() {
       'Aucune infraction constatée. Enregistrer le contrôle ?',
       [
         { text: 'Annuler', style: 'cancel' },
-        { 
-          text: 'Enregistrer', 
+        {
+          text: 'Enregistrer',
           onPress: () => {
             Alert.alert('Succès', 'Contrôle enregistré avec succès');
             resetForm();
@@ -77,209 +103,268 @@ export default function ControlScreen() {
   };
 
   const handleViolation = () => {
-    if (!vehicleData) {
+    if (!vehicleDetails || !verification) {
       Alert.alert('Erreur', 'Veuillez d\'abord vérifier le véhicule');
       return;
     }
-    
+
     router.push({
       pathname: '/violations',
-      params: { 
-        plate: scannedPlate,
-        vehicleData: JSON.stringify(vehicleData),
-        controlType: controlType
+      params: {
+        plate: plate,
+        vehicleData: JSON.stringify({
+          ...vehicleDetails,
+          ...verification
+        })
       }
     });
   };
 
   const resetForm = () => {
-    setScannedPlate('');
-    setControlType('');
-    setVehicleData(null);
+    setPlate('');
+    setVehicleDetails(null);
+    setVerification(null);
+    setError(null);
+  };
+
+  const dismissError = () => {
+    setError(null);
   };
 
   return (
     <View style={styles.container}>
-      <Header 
+      <Header
         title="Contrôle Véhicule"
         subtitle="Vérification et contrôle"
       />
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Manual Control Form */}
-        {!vehicleData && (
-          <Card>
-            <Text style={styles.formTitle}>Contrôle Manuel</Text>
-            
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Numéro de plaque</Text>
-              <TextInput
-                style={styles.textInput}
-                placeholder="DJ-1234-AB"
-                value={scannedPlate}
-                onChangeText={setScannedPlate}
-                autoCapitalize="characters"
-              />
+        {/* Error Card */}
+        {error && (
+          <Card style={{
+            ...styles.errorCard,
+            ...(error.type === 'warning' ? styles.warningCard : styles.errorCardRed)
+          }}>
+            <View style={styles.errorHeader}>
+              <View style={[styles.errorIcon, error.type === 'warning' ? styles.warningIcon : styles.errorIconRed]}>
+                <AlertCircle size={20} color={COLORS.surface} />
+              </View>
+              <View style={styles.errorContent}>
+                <Text style={styles.errorTitle}>
+                  {error.type === 'warning' ? 'Véhicule non trouvé' : 'Erreur de recherche'}
+                </Text>
+                <Text style={styles.errorMessage}>{error.message}</Text>
+              </View>
+              <TouchableOpacity onPress={dismissError} style={styles.dismissButton}>
+                <X size={18} color={COLORS.textSecondary} />
+              </TouchableOpacity>
             </View>
-            
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Type de contrôle</Text>
-              <View style={styles.controlTypeButtons}>
-                {[
-                  { key: 'routine', label: 'Routine' },
-                  { key: 'speed', label: 'Vitesse' },
-                  { key: 'transit', label: 'Transit' },
-                  { key: 'special', label: 'Spécial' }
-                ].map((type) => (
-                  <TouchableOpacity
-                    key={type.key}
-                    style={[
-                      styles.controlTypeButton,
-                      controlType === type.key && styles.controlTypeButtonActive
-                    ]}
-                    onPress={() => setControlType(type.key)}
-                  >
-                    <Text style={[
-                      styles.controlTypeButtonText,
-                      controlType === type.key && styles.controlTypeButtonTextActive
-                    ]}>
-                      {type.label}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+          </Card>
+        )}
+
+        {/* Camera Simulation */}
+        {!vehicleDetails && !error && (
+          <Card style={styles.cameraCard}>
+            <View style={styles.cameraFrame}>
+              <View style={styles.scanFrame}>
+                <Camera size={48} color={COLORS.surface} />
+                <Text style={styles.scanText}>
+                  {isScanning ? 'Analyse en cours...' : 'Centrez la plaque dans le cadre'}
+                </Text>
               </View>
             </View>
-            
+
+            {/* Scanning animation */}
+            {isScanning && (
+              <View style={styles.scanningLine} />
+            )}
+          </Card>
+        )}
+
+        {/* Saisie Manuelle */}
+        {!vehicleDetails && (
+          <Card>
+            <Text style={styles.inputTitle}>Saisie Manuelle</Text>
+            <TextInput
+              style={styles.plateInput}
+              placeholder="Ex: 45B7890"
+              value={plate}
+              onChangeText={(text) => setPlate(formatPlateNumber(text))}
+              maxLength={12}
+              autoCapitalize="characters"
+            />
+
             <Button
-              title={isLoading ? 'Vérification...' : 'Démarrer Contrôle'}
-              onPress={handleStartControl}
-              disabled={!scannedPlate || !controlType || isLoading}
+              title={isLoading ? 'Analyse...' : 'Vérifier Véhicule'}
+              onPress={() => handleSearchVehicle(plate)}
+              disabled={isLoading || !plate}
+              icon={<ScanLine size={20} color={COLORS.surface} />}
             />
           </Card>
         )}
 
-        {/* Loading */}
-        {isLoading && (
-          <LoadingSpinner 
-            title="Vérification en cours..."
-            subtitle="Consultation des bases de données officielles"
-          />
+        {isLoading && <LoadingSpinner />}
+
+        {/* Carte des détails du véhicule */}
+        {vehicleDetails && (
+          <Card style={styles.firstCard}>
+            <View style={[styles.vehicleHeader, { marginBottom: 20 }]}>
+              <Text style={styles.sectionTitle}>Détails du Véhicule</Text>
+              <Car size={24} color={COLORS.primary} />
+            </View>
+
+            <View style={styles.detailsContainer}>
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Plaque:</Text>
+                <Text style={styles.detailValue}>{vehicleDetails.plaque}</Text>
+              </View>
+
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Marque/Modèle:</Text>
+                <Text style={styles.detailValue}>{vehicleDetails.brand} {vehicleDetails.model}</Text>
+              </View>
+              {/* <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Couleur:</Text>
+                <Text style={styles.detailValue}>{vehicleDetails.color || 'Non spécifiée'}</Text>
+              </View> */}
+
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Année:</Text>
+                <Text style={styles.detailValue}>{vehicleDetails.manufactureYear}</Text>
+              </View>
+
+              {/* <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Type de véhicule:</Text>
+                <Text style={styles.detailValue}>{vehicleDetails.vehicleType || 'Non spécifié'}</Text>
+              </View> */}
+
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>N° Châssis:</Text>
+                <Text style={styles.detailValue}>{vehicleDetails.chassisNumber}</Text>
+              </View>
+
+              <View style={styles.detailRow}>
+                <Text style={styles.detailLabel}>Propriétaire:</Text>
+                <Text style={styles.detailValue}>{vehicleDetails.ownerUsername}</Text>
+              </View>
+            </View>
+          </Card>
         )}
 
-        {/* Vehicle Information */}
-        {vehicleData && !isLoading && (
+        {/* Carte de vérification */}
+        {verification && (
           <Card>
             <View style={styles.vehicleHeader}>
-              <View style={styles.vehicleInfo}>
-                <Text style={styles.vehiclePlate}>{vehicleData.plate}</Text>
-                <View style={styles.vehicleTypeContainer}>
-                  <View style={[
-                    styles.vehicleTypeBadge, 
-                    { backgroundColor: getTypeColor(vehicleData.type) }
-                  ]}>
-                    <Text style={styles.vehicleTypeText}>
-                      {getTypeLabel(vehicleData.type)}
-                    </Text>
-                  </View>
+              <Text style={styles.sectionTitle}>Vérifications</Text>
+              <Shield size={24} color={COLORS.primary} />
+            </View>
+
+            <View style={styles.verificationContainer}>
+              <View style={styles.verificationItem}>
+                <View style={styles.verificationHeader}>
+                  {verification.carteGriseValide ? (
+                    <CheckCircle size={20} color={COLORS.success} />
+                  ) : (
+                    <XCircle size={20} color={COLORS.danger} />
+                  )}
+                  <Text style={styles.verificationText}>Carte Grise</Text>
                 </View>
+                <Text style={verification.carteGriseValide ? styles.statusValid : styles.statusExpired}>
+                  {verification.carteGriseValide ? 'Valide' : 'Expiré'}
+                </Text>
               </View>
-              <Car size={32} color={COLORS.primary} />
-            </View>
 
-            {/* Owner */}
-            <View style={styles.ownerInfo}>
-              <User size={20} color={COLORS.textSecondary} />
-              <Text style={styles.ownerName}>{vehicleData.owner}</Text>
-            </View>
-
-            {/* Validations */}
-            <View style={styles.validationsContainer}>
-              <Text style={styles.validationsTitle}>Vérifications</Text>
-              {Object.entries(vehicleData.validations).map(([key, validation]) => (
-                <View key={key} style={styles.validationItem}>
-                  <View style={styles.validationHeader}>
-                    <View style={styles.validationInfo}>
-                      {validation.status === 'valid' ? 
-                        <CheckCircle size={20} color={COLORS.secondary} /> :
-                        <XCircle size={20} color={COLORS.danger} />
-                      }
-                      <View style={styles.validationDetails}>
-                        <Text style={styles.validationTitle}>
-                          {key === 'registration' ? 'Carte grise' :
-                           key === 'license' ? 'Permis' :
-                           key === 'insurance' ? 'Assurance' :
-                           key === 'technical' ? 'Contrôle technique' : key}
-                        </Text>
-                        <Text style={styles.validationSource}>{validation.source}</Text>
-                      </View>
-                    </View>
-                    <View style={styles.validationStatus}>
-                      <View style={[
-                        styles.statusBadge,
-                        validation.status === 'valid' ? styles.statusValid : styles.statusExpired
-                      ]}>
-                        <Text style={[
-                          styles.statusText,
-                          validation.status === 'valid' ? styles.statusTextValid : styles.statusTextExpired
-                        ]}>
-                          {validation.status === 'valid' ? 'Valide' : 'Expiré'}
-                        </Text>
-                      </View>
-                      <Text style={styles.expiryDate}>{validation.expires}</Text>
-                    </View>
-                  </View>
-                  <Text style={styles.validationDescription}>{validation.details}</Text>
+              <View style={styles.verificationItem}>
+                <View style={styles.verificationHeader}>
+                  {verification.permisValide ? (
+                    <CheckCircle size={20} color={COLORS.success} />
+                  ) : (
+                    <XCircle size={20} color={COLORS.danger} />
+                  )}
+                  <Text style={styles.verificationText}>Permis de conduire</Text>
                 </View>
-              ))}
-            </View>
+                <Text style={verification.permisValide ? styles.statusValid : styles.statusExpired}>
+                  {verification.permisValide ? 'Valide' : 'Expiré'}
+                </Text>
+              </View>
 
-            {/* Actions */}
-            <View style={styles.actionButtons}>
-              <Button
-                title="Constater Infraction"
-                onPress={handleViolation}
-                variant="danger"
-                icon={<AlertCircle size={20} color={COLORS.surface} />}
-                style={styles.actionButton}
-              />
-              
-              <Button
-                title="Contrôle OK"
-                onPress={handleControlOK}
-                variant="success"
-                icon={<CheckCircle size={20} color={COLORS.surface} />}
-                style={styles.actionButton}
-              />
+              <View style={styles.verificationItem}>
+                <View style={styles.verificationHeader}>
+                  {verification.assuranceValide ? (
+                    <CheckCircle size={20} color={COLORS.success} />
+                  ) : (
+                    <XCircle size={20} color={COLORS.danger} />
+                  )}
+                  <Text style={styles.verificationText}>Assurance</Text>
+                </View>
+                <Text style={verification.assuranceValide ? styles.statusValid : styles.statusExpired}>
+                  {verification.assuranceValide ? 'Valide' : 'Expiré'}
+                </Text>
+              </View>
+
+              <Text style={styles.verificationMessage}>{verification.message}</Text>
             </View>
           </Card>
         )}
 
-        {/* Control Info */}
-        {vehicleData && (
+        {/* Informations du contrôle */}
+        {vehicleDetails && (
           <Card style={styles.lastCard}>
-            <Text style={styles.controlInfoTitle}>Informations du contrôle</Text>
-            <View style={styles.controlInfoItem}>
-              <MapPin size={16} color={COLORS.textSecondary} />
-              <Text style={styles.controlInfoText}>
-                Boulevard de la République, Zone Port
-              </Text>
+            <View style={styles.vehicleHeader}>
+              <Text style={styles.sectionTitle}>Informations du contrôle</Text>
+              <Calendar size={24} color={COLORS.primary} />
             </View>
-            <View style={styles.controlInfoItem}>
-              <Calendar size={16} color={COLORS.textSecondary} />
-              <Text style={styles.controlInfoText}>
-                {new Date().toLocaleDateString('fr-FR', { 
-                  weekday: 'long', 
-                  year: 'numeric', 
-                  month: 'long', 
-                  day: 'numeric' 
-                })}
-              </Text>
-            </View>
-            <View style={styles.controlInfoItem}>
-              <Shield size={16} color={COLORS.textSecondary} />
-              <Text style={styles.controlInfoText}>Agent PSR-2587 - AHMED</Text>
+
+            <View style={styles.controlInfoContainer}>
+              <View style={styles.controlInfoItem}>
+                <MapPin size={16} color={COLORS.textSecondary} />
+                <Text style={styles.controlInfoText}>
+                  {locationLoading ? 'Localisation en cours...' : locationAddress || 'Localisation indisponible'}
+                </Text>
+              </View>
+
+              <View style={styles.controlInfoItem}>
+                <Calendar size={16} color={COLORS.textSecondary} />
+                <Text style={styles.controlInfoText}>
+                  {new Date().toLocaleDateString('fr-FR', {
+                    weekday: 'long',
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })}
+                </Text>
+              </View>
+
+              <View style={styles.controlInfoItem}>
+                <User size={16} color={COLORS.textSecondary} />
+                <Text style={styles.controlInfoText}>
+                  {user ? (user.name || user.email) : 'Agent non identifié'}
+                </Text>
+              </View>
             </View>
           </Card>
+        )}
+
+        {/* Actions */}
+        {vehicleDetails && (
+          <View style={styles.actionButtons}>
+            <Button
+              title="Créer PV"
+              onPress={handleViolation}
+              variant="danger"
+              icon={<AlertCircle size={20} color={COLORS.surface} />}
+              style={styles.actionButton}
+            />
+            <Button
+              title="Contrôle OK"
+              onPress={handleControlOK}
+              variant="success"
+              icon={<CheckCircle size={20} color={COLORS.surface} />}
+              style={styles.actionButton}
+            />
+          </View>
         )}
       </ScrollView>
     </View>
@@ -297,7 +382,7 @@ const styles = StyleSheet.create({
   },
   formTitle: {
     ...TYPOGRAPHY.h3,
-    marginBottom: SPACING.sectionSpacing,
+    marginBottom: SPACING.md,
     color: COLORS.textPrimary,
   },
   inputGroup: {
@@ -306,8 +391,8 @@ const styles = StyleSheet.create({
   inputLabel: {
     ...TYPOGRAPHY.body,
     fontWeight: '600',
-    color: COLORS.textPrimary,
     marginBottom: SPACING.sm,
+    color: COLORS.textPrimary,
   },
   textInput: {
     borderWidth: 1,
@@ -317,172 +402,191 @@ const styles = StyleSheet.create({
     fontSize: 16,
     backgroundColor: COLORS.gray50,
   },
-  controlTypeButtons: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-  },
-  controlTypeButton: {
-    borderWidth: 1,
-    borderColor: COLORS.gray300,
-    borderRadius: BORDER_RADIUS.md,
-    padding: SPACING.md,
-    width: '48%',
-    marginBottom: SPACING.sm,
-    alignItems: 'center',
-  },
-  controlTypeButtonActive: {
-    backgroundColor: COLORS.primary,
-    borderColor: COLORS.primary,
-  },
-  controlTypeButtonText: {
-    ...TYPOGRAPHY.body,
-    color: COLORS.textPrimary,
-  },
-  controlTypeButtonTextActive: {
-    color: COLORS.surface,
-    fontWeight: '600',
-  },
   vehicleHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: SPACING.lg,
+    marginBottom: SPACING.md,
   },
-  vehicleInfo: {
-    flex: 1,
-  },
-  vehiclePlate: {
-    ...TYPOGRAPHY.h2,
-    color: COLORS.textPrimary,
-    marginBottom: SPACING.sm,
-  },
-  vehicleTypeContainer: {
-    flexDirection: 'row',
-  },
-  vehicleTypeBadge: {
-    borderRadius: BORDER_RADIUS.lg,
-    paddingHorizontal: SPACING.md,
-    paddingVertical: 4,
-  },
-  vehicleTypeText: {
-    ...TYPOGRAPHY.caption,
-    color: COLORS.surface,
-    fontWeight: '600',
-  },
-  ownerInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: SPACING.sectionSpacing,
-    paddingBottom: SPACING.lg,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.gray100,
-  },
-  ownerName: {
+  sectionTitle: {
     ...TYPOGRAPHY.h4,
-    color: COLORS.textPrimary,
-    marginLeft: SPACING.sm,
+    color: COLORS.primary,
   },
-  validationsContainer: {
-    marginBottom: SPACING.sectionSpacing,
+  detailsContainer: {
+    marginTop: SPACING.md,
+
   },
-  validationsTitle: {
-    ...TYPOGRAPHY.h4,
-    color: COLORS.textPrimary,
-    marginBottom: SPACING.lg,
-  },
-  validationItem: {
-    marginBottom: SPACING.lg,
-    padding: SPACING.md,
-    backgroundColor: COLORS.gray50,
-    borderRadius: BORDER_RADIUS.md,
-    borderLeftWidth: 4,
-    borderLeftColor: COLORS.gray200,
-  },
-  validationHeader: {
+  detailRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
     marginBottom: SPACING.sm,
   },
-  validationInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  validationDetails: {
-    marginLeft: SPACING.sm,
-    flex: 1,
-  },
-  validationTitle: {
+  detailLabel: {
     ...TYPOGRAPHY.body,
     fontWeight: '600',
+    color: COLORS.textSecondary,
+  },
+  detailValue: {
+    ...TYPOGRAPHY.body,
     color: COLORS.textPrimary,
   },
-  validationSource: {
+  verificationContainer: {
+    marginTop: SPACING.md,
+  },
+  verificationItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: SPACING.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.gray200,
+  },
+  verificationHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+  },
+  verificationText: {
+    ...TYPOGRAPHY.body,
+    color: COLORS.textPrimary,
+  },
+  verificationMessage: {
     ...TYPOGRAPHY.caption,
     color: COLORS.textSecondary,
-    marginTop: 2,
-  },
-  validationStatus: {
-    alignItems: 'flex-end',
-  },
-  statusBadge: {
-    borderRadius: 4,
-    paddingHorizontal: SPACING.sm,
-    paddingVertical: 2,
-    marginBottom: 4,
-  },
-  statusValid: {
-    backgroundColor: '#dcfce7',
-  },
-  statusExpired: {
-    backgroundColor: '#fecaca',
-  },
-  statusText: {
-    ...TYPOGRAPHY.caption,
-    fontWeight: '600',
-  },
-  statusTextValid: {
-    color: '#166534',
-  },
-  statusTextExpired: {
-    color: '#991b1b',
-  },
-  expiryDate: {
-    fontSize: 10,
-    color: COLORS.textSecondary,
-  },
-  validationDescription: {
-    ...TYPOGRAPHY.caption,
-    color: COLORS.textSecondary,
+    marginTop: SPACING.md,
     fontStyle: 'italic',
   },
-  actionButtons: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  actionButton: {
-    flex: 1,
-    marginHorizontal: 4,
-  },
-  controlInfoTitle: {
-    ...TYPOGRAPHY.body,
+  statusValid: {
+    color: COLORS.success,
     fontWeight: '600',
-    color: COLORS.textPrimary,
-    marginBottom: SPACING.md,
+  },
+  statusExpired: {
+    color: COLORS.danger,
+    fontWeight: '600',
+  },
+  controlInfoContainer: {
+    marginTop: SPACING.md,
   },
   controlInfoItem: {
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: SPACING.sm,
+    gap: SPACING.sm,
   },
   controlInfoText: {
-    ...TYPOGRAPHY.caption,
-    color: COLORS.textSecondary,
-    marginLeft: SPACING.sm,
+    ...TYPOGRAPHY.body,
+    color: COLORS.textPrimary,
+  },
+  actionButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: SPACING.md,
+    marginTop: SPACING.md,
+    marginBottom: SPACING.sectionSpacing,
+  },
+  actionButton: {
+    flex: 1,
   },
   lastCard: {
-    marginBottom: 80,
+    marginTop: SPACING.sectionSpacing,
+    marginBottom: SPACING.sectionSpacing,
+  },
+  firstCard: {
+    marginBottom: SPACING.sectionSpacing,
+  },
+  inputTitle: {
+    ...TYPOGRAPHY.h4,
+    marginBottom: SPACING.lg,
+    color: COLORS.textPrimary,
+  },
+  plateInput: {
+    borderWidth: 1,
+    borderColor: COLORS.gray300,
+    borderRadius: BORDER_RADIUS.md,
+    padding: SPACING.lg,
+    fontSize: 18,
+    fontFamily: 'monospace',
+    textAlign: 'center',
+    backgroundColor: COLORS.gray50,
+    marginBottom: SPACING.lg,
+  },
+  cameraCard: {
+    backgroundColor: COLORS.gray900,
+    marginBottom: SPACING.lg,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  cameraFrame: {
+    height: 200,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: COLORS.gray800,
+  },
+  scanFrame: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  scanText: {
+    ...TYPOGRAPHY.body,
+    color: COLORS.surface,
+    marginTop: SPACING.sm,
+    textAlign: 'center',
+  },
+  scanningLine: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 2,
+    backgroundColor: COLORS.primary,
+    opacity: 0.8,
+  },
+  // Error Card Styles
+  errorCard: {
+    marginBottom: SPACING.lg,
+    borderLeftWidth: 4,
+  },
+  warningCard: {
+    borderLeftColor: COLORS.warning,
+    backgroundColor: '#FFF8E1',
+  },
+  errorCardRed: {
+    borderLeftColor: COLORS.danger,
+    backgroundColor: '#FFEBEE',
+  },
+  errorHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: SPACING.md,
+  },
+  errorIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  warningIcon: {
+    backgroundColor: COLORS.warning,
+  },
+  errorIconRed: {
+    backgroundColor: COLORS.danger,
+  },
+  errorContent: {
+    flex: 1,
+  },
+  errorTitle: {
+    ...TYPOGRAPHY.h5,
+    color: COLORS.textPrimary,
+    marginBottom: SPACING.xs,
+  },
+  errorMessage: {
+    ...TYPOGRAPHY.body,
+    color: COLORS.textSecondary,
+    lineHeight: 20,
+  },
+  dismissButton: {
+    padding: SPACING.xs,
+    borderRadius: BORDER_RADIUS.sm,
   },
 });

@@ -48,12 +48,5 @@ export const MESSAGES = [
     title: 'Nouvelle mission',
     message: 'Renfort demandé RN1 km 15',
     time: '13:15'
-  },
-  {
-    id: 3,
-    type: 'urgent',
-    title: 'Véhicule recherché',
-    message: 'DJ-8745-CD - Signaler si aperçu',
-    time: '12:45'
   }
 ];
