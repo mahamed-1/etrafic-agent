@@ -105,13 +105,3 @@ L'application communique avec une API REST pour :
 ## 📄 Licence
 
 Ce projet est sous licence privée.
-
-## 👤 Auteur
-
-**Votre Nom**
-- GitHub: [@votre-username](https://github.com/votre-username)
-
-## 🙏 Remerciements
-
-- Équipe Expo pour les outils de développement
-- Communauté React Native
