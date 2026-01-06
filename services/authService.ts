@@ -19,6 +19,17 @@ interface JwtPayload {
   email?: string;
 }
 
+interface TokenIntrospectionResponse {
+  active: boolean;
+  identifier?: string;
+  userId?: string;
+  role?: string;
+  issuedAt?: string;
+  expiryDate?: string;
+  tokenId?: string;
+  reason?: string;
+}
+
 export class AuthService {
   private static decodeToken(token: string): JwtPayload | null {
     try {
@@ -131,6 +142,9 @@ export class AuthService {
         ['token_expiry', user.tokenExpiry]
       ]);
 
+      // Réinitialiser le flag de déconnexion dans le service API
+      apiService.resetLogoutFlag();
+
       if (LOG_CONFIG.ENABLE_AUTH_LOGS) {
         console.log('✅ Connexion réussie pour:', {
           identifier: user.identifier,
@@ -153,7 +167,7 @@ export class AuthService {
         identifier: credentials.identifier,
         timestamp: new Date().toISOString()
       });
- 
+
       // Debug détaillé en développement seulement
       if (LOG_CONFIG.ENABLE_AUTH_LOGS) {
         ErrorService.debugError(errorDetails);
@@ -234,6 +248,7 @@ export class AuthService {
       }
 
       // Utilisation d'axios direct pour éviter la récursion avec les intercepteurs
+      // Utiliser l'endpoint correct documenté : /auth/refresh
       const response = await axios.post(`${API_URL}/refresh`, {
         refreshToken
       });

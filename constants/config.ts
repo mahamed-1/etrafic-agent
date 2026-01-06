@@ -1,8 +1,10 @@
 // Configuration centralisée pour l'API
 export const API_CONFIG = {
     // URL de base pour tous les services
-    // BASE_URL: 'https://evisav2.gouv.dj/etraffic-api/api/v1',
-    BASE_URL: 'http://192.168.100.150:9191/api/v1',
+    BASE_URL: 'https://evisav2.gouv.dj/etraffic-api/api/v1',
+    // BASE_URL: 'http://192.168.100.150:9191/api/v1',
+    // BASE_URL: 'http://192.168.100.47:9191/api/v1',
+
     // URLs complètes (construites à partir de BASE_URL)
     get AUTH_URL() {
         return `${this.BASE_URL}/auth`;
@@ -31,3 +33,5 @@ export const LOG_CONFIG = {
     ENABLE_AUTH_LOGS: isDevelopment,
     ENABLE_USER_LOGS: true, // Pour les logs importants que l'utilisateur peut voir
 };
+
+

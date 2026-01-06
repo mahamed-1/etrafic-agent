@@ -1,5 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
+import { getDailyStatsByAgent } from '@/services/vehicleService';
+import { useFocusEffect } from '@react-navigation/native';
 import {
   View,
   Text,
@@ -12,10 +14,10 @@ import {
 import {
   User, FileText, Car, Calendar, MapPin, Shield,
   CircleCheck as CheckCircle, Circle as XCircle,
-  CircleAlert as AlertCircle, ScanLine, Camera, X
+  CircleAlert as AlertCircle, ScanLine, Camera, X, Home, Phone
 } from 'lucide-react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-
+import { AuthService } from '@/services/authService';
 import { Header } from '@/components/Header';
 import { Card } from '@/components/Card';
 import { Button } from '@/components/Button';
@@ -27,7 +29,7 @@ import { getVehicleDetails, verifyVehicle, type VehicleDetails, type VehicleVeri
 import { formatPlateNumber } from '@/utils/vehicleUtils';
 import { useLocationContext } from '@/contexts/LocationContext';
 import { useAuth } from '@/contexts/AuthContext';
-
+import AsyncStorage from '@react-native-async-storage/async-storage';
 export default function ControlScreen() {
   const [plate, setPlate] = useState('');
   const [vehicleDetails, setVehicleDetails] = useState<VehicleDetails | null>(null);
@@ -49,6 +51,18 @@ export default function ControlScreen() {
     }
   }, [params.plate]);
 
+  // Réinitialiser automatiquement quand on arrive sur la page sans paramètres
+  // (typiquement après avoir généré un PV et été redirigé vers le dashboard puis de retour ici)
+  useFocusEffect(
+    React.useCallback(() => {
+      // Si pas de paramètre plaque, c'est qu'on arrive "proprement" sur la page
+      // On fait un reset pour s'assurer que tout est vide
+      if (!params.plate) {
+        resetForm();
+      }
+    }, [params.plate])
+  );
+
   const handleSearchVehicle = async (plateNumber: string) => {
     setIsLoading(true);
     setError(null); // Clear previous errors
@@ -57,6 +71,10 @@ export default function ControlScreen() {
         getVehicleDetails(plateNumber),
         verifyVehicle(plateNumber)
       ]);
+
+      console.log('🚗 ControlScreen - Détails véhicule reçus de l\'API:', details);
+      console.log('🔍 ownerFullname dans la réponse API:', details.ownerFullname);
+      console.log('🔍 ownerUsername dans la réponse API:', details.ownerUsername);
 
       setVehicleDetails(details);
       setVerification(verificationData);
@@ -85,21 +103,26 @@ export default function ControlScreen() {
     }
   };
 
-  const handleControlOK = () => {
-    Alert.alert(
-      'Contrôle terminé',
-      'Aucune infraction constatée. Enregistrer le contrôle ?',
-      [
-        { text: 'Annuler', style: 'cancel' },
-        {
-          text: 'Enregistrer',
-          onPress: () => {
-            Alert.alert('Succès', 'Contrôle enregistré avec succès');
-            resetForm();
-          }
-        }
-      ]
-    );
+
+  const handleControlOK = async () => {
+    const userJson = await AsyncStorage.getItem('psr_user');
+    const user = userJson ? JSON.parse(userJson) : null;
+    const agentId = user?.id;
+    console.log('agentId:', agentId);
+
+    if (!vehicleDetails || !agentId) {
+      Alert.alert('Erreur', 'Données véhicule ou agent manquantes');
+      return;
+    }
+    try {
+      await markControlOK(vehicleDetails.plaque, agentId);
+      Alert.alert('Succès', 'Contrôle marqué OK');
+      const stats = await getDailyStatsByAgent(agentId);
+      resetForm();
+      goBackToDashboard();
+    } catch (error) {
+      Alert.alert('Erreur', 'Impossible de marquer le contrôle comme OK');
+    }
   };
 
   const handleViolation = () => {
@@ -108,14 +131,19 @@ export default function ControlScreen() {
       return;
     }
 
+    const dataToSend = {
+      ...vehicleDetails,
+      ...verification
+    };
+
+    console.log('🚗 ControlScreen - Envoi des données vers ViolationsScreen:', dataToSend);
+    console.log('🔍 ownerFullname dans les données envoyées:', dataToSend.ownerFullname);
+
     router.push({
       pathname: '/violations',
       params: {
         plate: plate,
-        vehicleData: JSON.stringify({
-          ...vehicleDetails,
-          ...verification
-        })
+        vehicleData: JSON.stringify(dataToSend)
       }
     });
   };
@@ -125,6 +153,10 @@ export default function ControlScreen() {
     setVehicleDetails(null);
     setVerification(null);
     setError(null);
+  };
+
+  const goBackToDashboard = () => {
+    router.replace('/');
   };
 
   const dismissError = () => {
@@ -137,6 +169,17 @@ export default function ControlScreen() {
         title="Contrôle Véhicule"
         subtitle="Vérification et contrôle"
       />
+
+      {/* Navigation Button */}
+      <View style={styles.navigationContainer}>
+        <Button
+          title="Retour au Dashboard"
+          onPress={goBackToDashboard}
+          variant="secondary"
+          icon={<Home size={20} color={COLORS.primary} />}
+          style={styles.backButton}
+        />
+      </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {/* Error Card */}
@@ -208,44 +251,89 @@ export default function ControlScreen() {
         {/* Carte des détails du véhicule */}
         {vehicleDetails && (
           <Card style={styles.firstCard}>
-            <View style={[styles.vehicleHeader, { marginBottom: 20 }]}>
-              <Text style={styles.sectionTitle}>Détails du Véhicule</Text>
-              <Car size={24} color={COLORS.primary} />
-            </View>
-
-            <View style={styles.detailsContainer}>
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Plaque:</Text>
-                <Text style={styles.detailValue}>{vehicleDetails.plaque}</Text>
+            <View style={styles.vehicleCardProfessional}>
+              {/* Header élégant avec gradient visuel */}
+              <View style={styles.vehicleHeaderProfessional}>
+                <View style={styles.vehicleHeaderMain}>
+                  <View style={styles.plateContainer}>
+                    <Text style={styles.vehiclePlateProfessional}>{vehicleDetails.plaque}</Text>
+                    <View style={styles.plateUnderline} />
+                  </View>
+                  <View style={styles.vehicleBrandContainer}>
+                    <Text style={styles.vehicleBrandProfessional}>{vehicleDetails.brand}</Text>
+                    <Text style={styles.vehicleModelProfessional}>{vehicleDetails.model}</Text>
+                  </View>
+                </View>
+                <View style={styles.vehicleYearBadgeProfessional}>
+                  <Text style={styles.vehicleYearTextProfessional}>{vehicleDetails.manufactureYear}</Text>
+                </View>
               </View>
 
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Marque/Modèle:</Text>
-                <Text style={styles.detailValue}>{vehicleDetails.brand} {vehicleDetails.model}</Text>
+              {/* Section propriétaire avec icônes professionnelles */}
+              <View style={styles.ownerSectionProfessional}>
+                <View style={styles.sectionHeaderProfessional}>
+                  <User size={18} color="#1E40AF" />
+                  <Text style={styles.sectionTitleProfessional}>Propriétaire</Text>
+                </View>
+                <View style={styles.ownerDetailsProfessional}>
+                  <Text style={styles.ownerNameProfessional}>
+                    {vehicleDetails.ownerFullname || vehicleDetails.ownerUsername || 'Non spécifié'}
+                  </Text>
+                  {(vehicleDetails.phoneNumber) && (
+                    <View style={styles.contactRowProfessional}>
+                      <Phone size={14} color="#059669" />
+                      <Text style={styles.contactTextProfessional}>
+                        {vehicleDetails.phoneNumber}
+                      </Text>
+                    </View>
+                  )}
+                  {vehicleDetails.ownerEmail && (
+                    <View style={styles.contactRowProfessional}>
+                      <Text style={styles.emailTextProfessional}>{vehicleDetails.ownerEmail}</Text>
+                    </View>
+                  )}
+                </View>
               </View>
-              {/* <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Couleur:</Text>
-                <Text style={styles.detailValue}>{vehicleDetails.color || 'Non spécifiée'}</Text>
-              </View> */}
 
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Année:</Text>
-                <Text style={styles.detailValue}>{vehicleDetails.manufactureYear}</Text>
+              {/* Informations techniques détaillées */}
+              <View style={styles.technicalSectionProfessional}>
+                <View style={styles.sectionHeaderProfessional}>
+                  <Car size={18} color="#7C3AED" />
+                  <Text style={styles.sectionTitleProfessional}>Informations techniques</Text>
+                </View>
+                <View style={styles.technicalGridProfessional}>
+                  <View style={styles.technicalItemProfessional}>
+                    <Text style={styles.technicalLabelProfessional}>Châssis</Text>
+                    <Text style={styles.technicalValueProfessional}>{vehicleDetails.chassisNumber}</Text>
+                  </View>
+                  <View style={styles.technicalItemProfessional}>
+                    <Text style={styles.technicalLabelProfessional}>Moteur</Text>
+                    <Text style={styles.technicalValueProfessional}>{vehicleDetails.engineNumber}</Text>
+                  </View>
+                  <View style={styles.technicalItemProfessional}>
+                    <Text style={styles.technicalLabelProfessional}>Couleur</Text>
+                    <Text style={styles.technicalValueProfessional}>{vehicleDetails.color || 'N/A'}</Text>
+                  </View>
+                  <View style={styles.technicalItemProfessional}>
+                    <Text style={styles.technicalLabelProfessional}>Carburant</Text>
+                    <Text style={styles.technicalValueProfessional}>{vehicleDetails.fuelType || 'N/A'}</Text>
+                  </View>
+                </View>
               </View>
 
-              {/* <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Type de véhicule:</Text>
-                <Text style={styles.detailValue}>{vehicleDetails.vehicleType || 'Non spécifié'}</Text>
-              </View> */}
-
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>N° Châssis:</Text>
-                <Text style={styles.detailValue}>{vehicleDetails.chassisNumber}</Text>
-              </View>
-
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Propriétaire:</Text>
-                <Text style={styles.detailValue}>{vehicleDetails.ownerUsername}</Text>
+              {/* Statut du véhicule */}
+              <View style={styles.statusSectionProfessional}>
+                <View style={styles.statusBadgeProfessional}>
+                  <View style={[styles.statusDot,
+                  vehicleDetails.status === 'Active' ? styles.statusActive : styles.statusInactive
+                  ]} />
+                  <Text style={styles.statusTextProfessional}>{vehicleDetails.status}</Text>
+                </View>
+                {vehicleDetails.approvalStatus && (
+                  <View style={styles.approvalBadgeProfessional}>
+                    <Text style={styles.approvalTextProfessional}>{vehicleDetails.approvalStatus}</Text>
+                  </View>
+                )}
               </View>
             </View>
           </Card>
@@ -380,6 +468,27 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: SPACING.lg,
   },
+  navigationContainer: {
+    paddingHorizontal: SPACING.lg,
+    paddingTop: SPACING.md,
+    paddingBottom: SPACING.sm,
+    backgroundColor: COLORS.background,
+  },
+  backButton: {
+    alignSelf: 'flex-start',
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    paddingHorizontal: SPACING.lg,
+    shadowColor: COLORS.gray300,
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
+  },
   formTitle: {
     ...TYPOGRAPHY.h3,
     marginBottom: SPACING.md,
@@ -494,6 +603,102 @@ const styles = StyleSheet.create({
   firstCard: {
     marginBottom: SPACING.sectionSpacing,
   },
+
+  // Styles pour la carte véhicule compacte
+  vehicleCard: {
+    borderRadius: BORDER_RADIUS.lg,
+  },
+  vehicleHeaderCompact: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: SPACING.md,
+    paddingBottom: SPACING.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.gray100,
+  },
+  vehicleHeaderLeft: {
+    flex: 1,
+  },
+  vehiclePlateCompact: {
+    ...TYPOGRAPHY.h3,
+    color: COLORS.textPrimary,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  vehicleBrandCompact: {
+    ...TYPOGRAPHY.body,
+    color: COLORS.textSecondary,
+    fontWeight: '500',
+  },
+  vehicleYearBadge: {
+    backgroundColor: COLORS.primary,
+    borderRadius: BORDER_RADIUS.sm,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 4,
+  },
+  vehicleYearText: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.surface,
+    fontWeight: '600',
+  },
+
+  // Informations principales
+  vehicleMainInfo: {
+    gap: SPACING.sm,
+  },
+  vehicleInfoColumn: {
+    gap: SPACING.xs,
+  },
+  vehicleInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderRadius: BORDER_RADIUS.sm,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.xs,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  vehicleInfoContent: {
+    marginLeft: SPACING.sm,
+    flex: 1,
+  },
+  vehicleInfoLabel: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.textSecondary,
+    fontWeight: '500',
+    fontSize: 11,
+  },
+  vehicleInfoValue: {
+    ...TYPOGRAPHY.body,
+    color: COLORS.textPrimary,
+    fontWeight: '600',
+    fontSize: 13,
+  },
+
+  // Section châssis
+  chassisSection: {
+    backgroundColor: '#F1F5F9',
+    borderRadius: BORDER_RADIUS.sm,
+    padding: SPACING.sm,
+    marginTop: SPACING.xs,
+    alignItems: 'center',
+  },
+  chassisLabel: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.textSecondary,
+    fontWeight: '500',
+    fontSize: 10,
+    marginBottom: 2,
+  },
+  chassisValue: {
+    ...TYPOGRAPHY.body,
+    color: COLORS.textPrimary,
+    fontWeight: '600',
+    fontSize: 12,
+    fontFamily: 'monospace',
+  },
   inputTitle: {
     ...TYPOGRAPHY.h4,
     marginBottom: SPACING.lg,
@@ -588,5 +793,203 @@ const styles = StyleSheet.create({
   dismissButton: {
     padding: SPACING.xs,
     borderRadius: BORDER_RADIUS.sm,
+  },
+
+  // === STYLES PROFESSIONNELS POUR CONTROLSCREEN ===
+  vehicleCardProfessional: {
+    borderRadius: BORDER_RADIUS.lg,
+    backgroundColor: '#FFFFFF',
+  },
+  vehicleHeaderProfessional: {
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+    paddingBottom: SPACING.md,
+    marginBottom: SPACING.lg,
+  },
+  vehicleHeaderMain: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+  plateContainer: {
+    flex: 1,
+  },
+  vehiclePlateProfessional: {
+    ...TYPOGRAPHY.h2,
+    color: '#1F2937',
+    fontWeight: '800',
+    letterSpacing: 2,
+    marginBottom: 4,
+  },
+  plateUnderline: {
+    height: 3,
+    backgroundColor: '#3B82F6',
+    borderRadius: 2,
+    width: '60%',
+  },
+  vehicleBrandContainer: {
+    marginTop: SPACING.xs,
+  },
+  vehicleBrandProfessional: {
+    ...TYPOGRAPHY.h4,
+    color: '#374151',
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  vehicleModelProfessional: {
+    ...TYPOGRAPHY.body,
+    color: '#6B7280',
+    fontWeight: '500',
+    fontStyle: 'italic',
+  },
+  vehicleYearBadgeProfessional: {
+    backgroundColor: '#3B82F6',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    shadowColor: '#3B82F6',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  vehicleYearTextProfessional: {
+    ...TYPOGRAPHY.h4,
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+
+  // Section propriétaire professionnelle
+  ownerSectionProfessional: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: BORDER_RADIUS.md,
+    padding: SPACING.lg,
+    marginBottom: SPACING.md,
+    borderLeftWidth: 4,
+    borderLeftColor: '#1E40AF',
+  },
+  sectionHeaderProfessional: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: SPACING.md,
+    gap: SPACING.sm,
+  },
+  sectionTitleProfessional: {
+    ...TYPOGRAPHY.h4,
+    color: '#1E40AF',
+    fontWeight: '600',
+  },
+  ownerDetailsProfessional: {
+    gap: SPACING.sm,
+  },
+  ownerNameProfessional: {
+    ...TYPOGRAPHY.h4,
+    color: '#111827',
+    fontWeight: '700',
+    marginBottom: SPACING.xs,
+  },
+  contactRowProfessional: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+    paddingVertical: 4,
+  },
+  contactTextProfessional: {
+    ...TYPOGRAPHY.body,
+    color: '#059669',
+    fontWeight: '600',
+  },
+  emailTextProfessional: {
+    ...TYPOGRAPHY.body,
+    color: '#6B7280',
+    fontStyle: 'italic',
+  },
+
+  // Section technique professionnelle
+  technicalSectionProfessional: {
+    backgroundColor: '#FEFBFF',
+    borderRadius: BORDER_RADIUS.md,
+    padding: SPACING.lg,
+    marginBottom: SPACING.md,
+    borderLeftWidth: 4,
+    borderLeftColor: '#7C3AED',
+  },
+  technicalGridProfessional: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: SPACING.md,
+  },
+  technicalItemProfessional: {
+    flex: 1,
+    minWidth: '45%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: BORDER_RADIUS.sm,
+    padding: SPACING.md,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  technicalLabelProfessional: {
+    ...TYPOGRAPHY.caption,
+    color: '#6B7280',
+    fontWeight: '500',
+    fontSize: 10,
+    textTransform: 'uppercase',
+    marginBottom: 4,
+  },
+  technicalValueProfessional: {
+    ...TYPOGRAPHY.body,
+    color: '#111827',
+    fontWeight: '600',
+    fontFamily: 'monospace',
+  },
+
+  // Section statut professionnelle
+  statusSectionProfessional: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: SPACING.md,
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+  },
+  statusBadgeProfessional: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F0F9FF',
+    borderRadius: 20,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+    gap: SPACING.sm,
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  statusActive: {
+    backgroundColor: '#10B981',
+  },
+  statusInactive: {
+    backgroundColor: '#EF4444',
+  },
+  statusTextProfessional: {
+    ...TYPOGRAPHY.body,
+    color: '#0369A1',
+    fontWeight: '600',
+  },
+  approvalBadgeProfessional: {
+    backgroundColor: '#FEF3C7',
+    borderRadius: 12,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 4,
+  },
+  approvalTextProfessional: {
+    ...TYPOGRAPHY.caption,
+    color: '#92400E',
+    fontWeight: '600',
+    fontSize: 10,
   },
 });

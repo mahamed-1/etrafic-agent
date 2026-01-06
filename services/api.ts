@@ -15,6 +15,7 @@ const CACHE_DURATION = API_CONFIG.CACHE_DURATION;
 class ApiService {
     private api: AxiosInstance;
     private isRefreshing = false;
+    private isLoggedOut = false; // Flag pour éviter les requêtes après déconnexion
     private failedQueue: Array<{
         resolve: (value: any) => void;
         reject: (error: any) => void;
@@ -34,6 +35,13 @@ class ApiService {
         // Request interceptor - Ajouter automatiquement le token
         this.api.interceptors.request.use(
             async (config) => {
+                // Bloquer les requêtes si l'utilisateur est déconnecté
+                if (this.isLoggedOut) {
+                    const error = new Error('Utilisateur déconnecté');
+                    error.name = 'LoggedOutError';
+                    throw error;
+                }
+
                 const token = await AsyncStorage.getItem('auth_token');
                 if (token) {
                     config.headers.Authorization = `Bearer ${token}`;
@@ -106,11 +114,18 @@ class ApiService {
                             this.processQueue(null, newToken);
                             originalRequest.headers.Authorization = `Bearer ${newToken}`;
                             return this.api(originalRequest);
+                        } else {
+                            // Impossible de rafraîchir le token - forcer la déconnexion
+                            console.warn('⚠️ Impossible de rafraîchir le token - déconnexion automatique');
+                            await this.handleAuthFailure();
+                            const authError = new Error('Session expirée. Une nouvelle connexion a été détectée.');
+                            authError.name = 'AuthenticationError';
+                            throw authError;
                         }
                     } catch (refreshError) {
                         this.processQueue(refreshError, null);
-                        // Rediriger vers login si nécessaire
-                        this.handleAuthFailure();
+                        // Déclencher la déconnexion automatique
+                        await this.handleAuthFailure();
                         return Promise.reject(refreshError);
                     } finally {
                         this.isRefreshing = false;
@@ -138,32 +153,59 @@ class ApiService {
         try {
             const refreshToken = await AsyncStorage.getItem('refresh_token');
             if (!refreshToken) {
-                throw new Error('Aucun refresh token disponible');
+                console.log('❌ Aucun refresh token disponible');
+                return null;
             }
 
+            console.log('🔄 Tentative refresh token avec endpoint: /auth/refresh');
+
+            // Utiliser l'endpoint correct documenté dans l'API
             const response = await axios.post(`${API_BASE_URL}/auth/refresh`, {
                 refreshToken: refreshToken
             });
+
+            console.log('✅ Refresh token réussi');
 
             const { accessToken, access_token } = response.data;
             const newToken = accessToken || access_token;
 
             if (newToken) {
                 await AsyncStorage.setItem('auth_token', newToken);
+                console.log('✅ Nouveau token sauvegardé');
                 return newToken;
             }
 
-            throw new Error('Nouveau token non reçu');
-        } catch (error) {
-            console.error('Erreur refresh token:', error);
+            throw new Error('Nouveau token non reçu dans la réponse');
+        } catch (error: any) {
+            console.error('❌ Erreur refresh token:', {
+                status: error?.response?.status,
+                message: error?.response?.data?.message || error?.message,
+                url: error?.config?.url
+            });
             return null;
         }
     }
 
-    private handleAuthFailure() {
-        // Clear storage et rediriger vers login
-        AsyncStorage.multiRemove(['auth_token', 'refresh_token', 'psr_user']);
-        // Note: La redirection sera gérée par le contexte d'authentification
+    private async handleAuthFailure() {
+        // Marquer comme déconnecté pour éviter les nouvelles requêtes
+        this.isLoggedOut = true;
+
+        // Clear storage et déconnecter automatiquement
+        await AsyncStorage.multiRemove(['auth_token', 'refresh_token', 'psr_user']);
+        console.log('🔓 Session expirée - déconnexion automatique');
+
+        // Importer dynamiquement pour éviter les imports circulaires
+        try {
+            const { AuthService } = await import('./authService');
+            await AuthService.logout();
+            console.log('✅ Déconnexion automatique effectuée');
+        } catch (error) {
+            console.error('❌ Erreur lors de la déconnexion automatique:', error);
+            // Fallback: émettre un événement custom pour forcer la déconnexion
+            if (typeof window !== 'undefined' && window.dispatchEvent) {
+                window.dispatchEvent(new CustomEvent('forceLogout'));
+            }
+        }
     }
 
     // Validation de session avec cache
@@ -203,6 +245,11 @@ class ApiService {
 
             return false;
         }
+    }
+
+    // Méthode pour réinitialiser le flag de déconnexion lors d'une nouvelle connexion
+    resetLogoutFlag() {
+        this.isLoggedOut = false;
     }
 
     // Invalider le cache de session

@@ -83,7 +83,13 @@ export default function ProfileScreen() {
     if (loading) {
         return (
             <View style={styles.container}>
-                <Header title="Profil" />
+                <Header
+                    title="Profil"
+                    onNotificationPress={() => router.push({
+                        pathname: '/(tabs)/notifications',
+                        params: { filter: 'unread' }
+                    })}
+                />
                 <View style={styles.loadingContainer}>
                     <ActivityIndicator size="large" color={COLORS.primary} />
                     <Text style={styles.loadingText}>Chargement du profil...</Text>
@@ -94,7 +100,13 @@ export default function ProfileScreen() {
 
     return (
         <View style={styles.container}>
-            <Header title="Profil" />
+            <Header
+                title="Profil"
+                onNotificationPress={() => router.push({
+                    pathname: '/(tabs)/notifications',
+                    params: { filter: 'unread' }
+                })}
+            />
 
             <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
                 {/* Error Card */}

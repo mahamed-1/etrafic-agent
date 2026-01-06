@@ -6,7 +6,7 @@ export const COLORS = {
   warning: '#f59e0b',
   success: '#10b981',
   info: '#3b82f6', // Retour au bleu original
-
+  hypercube: 'rgb(22, 39, 75)',
   // Grays
   gray50: '#f9fafb',
   gray100: '#f3f4f6',

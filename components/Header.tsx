@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet, StatusBar, TouchableOpacity, Alert } from 'react-native';
 import { Shield, LogOut, Bell } from 'lucide-react-native';
 import { useAuth } from '@/contexts/AuthContext';
+import { useUnreadNotificationCount } from '@/hooks/useUnreadNotificationCount';
 import { COLORS } from '@/styles/colors';
 import { TYPOGRAPHY } from '@/styles/typography';
 import { SPACING } from '@/styles/spacing';
@@ -10,16 +11,20 @@ interface HeaderProps {
   title: string;
   subtitle?: string;
   isOnline?: boolean;
-  notificationCount?: number;
+  onNotificationPress?: () => void; // Callback pour redirection
 }
 
 export const Header: React.FC<HeaderProps> = ({
   title,
   subtitle,
   isOnline = true,
-  notificationCount = 0
+  onNotificationPress
 }) => {
   const { user, logout } = useAuth();
+  const { count: unreadCount, loading: countLoading, refresh: refreshCount, error } = useUnreadNotificationCount({
+    autoRefresh: false, // Désactiver temporairement l'auto-refresh pour débugger
+    refreshInterval: 60000 // Augmenter l'intervalle à 1 minute
+  });
 
   const handleLogout = () => {
     Alert.alert(
@@ -37,13 +42,17 @@ export const Header: React.FC<HeaderProps> = ({
   };
 
   const handleNotifications = () => {
-    Alert.alert(
-      'Notifications',
-      notificationCount > 0
-        ? `Vous avez ${notificationCount} nouvelle${notificationCount > 1 ? 's' : ''} notification${notificationCount > 1 ? 's' : ''}.`
-        : 'Aucune notification pour le moment.',
-      [{ text: 'OK' }]
-    );
+    if (onNotificationPress) {
+      // Si un callback de redirection est fourni, l'utiliser
+      onNotificationPress();
+    } else {
+      // Sinon, afficher un simple alert
+      Alert.alert(
+        'Notifications',
+        unreadCount > 0 ? `Vous avez ${unreadCount} notification(s) non lue(s)` : 'Aucune nouvelle notification',
+        [{ text: 'OK' }]
+      );
+    }
   };
 
   return (
@@ -66,14 +75,15 @@ export const Header: React.FC<HeaderProps> = ({
                 activeOpacity={0.6}
               >
                 <Bell size={18} color={COLORS.surface} strokeWidth={2} />
-                {notificationCount > 0 && (
+                {unreadCount > 0 && (
                   <View style={styles.notificationBadge}>
                     <Text style={styles.badgeNumber}>
-                      {notificationCount > 9 ? '9+' : notificationCount}
+                      {unreadCount > 9 ? '9+' : unreadCount}
                     </Text>
                   </View>
                 )}
               </TouchableOpacity>
+
               <TouchableOpacity onPress={handleLogout} style={styles.logoutButton}>
                 <LogOut size={20} color={COLORS.surface} />
               </TouchableOpacity>
@@ -89,7 +99,7 @@ export const Header: React.FC<HeaderProps> = ({
 
 const styles = StyleSheet.create({
   header: {
-    backgroundColor: COLORS.primary,
+    backgroundColor: COLORS.hypercube,
     paddingTop: 50,
     paddingBottom: SPACING.xl,
     paddingHorizontal: SPACING.lg,

@@ -4,7 +4,7 @@
     "slug": "psr-mobile",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/ic_launcher.png",
     "scheme": "psrapp",
     "userInterfaceStyle": "automatic",
     "backgroundColor": "#2563eb",
@@ -14,11 +14,10 @@
       "package": "com.hypercube.psrmobile",
       "versionCode": 1,
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "foregroundImage": "./assets/images/ic_launcher_foreground.png",
         "backgroundColor": "#2563eb"
       },
-      "permissions": [],
-      "usesCleartextTraffic": true
+      "permissions": []
     },
     "ios": {
       "bundleIdentifier": "com.votresociete.psrmobile",
@@ -41,8 +40,9 @@
         "expo-build-properties",
         {
           "android": {
-            "compileSdkVersion": 34,
-            "targetSdkVersion": 34
+            "usesCleartextTraffic": true,
+            "compileSdkVersion": 35,
+            "targetSdkVersion": 35
           }
         }
       ],

@@ -12,7 +12,7 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
-import { Shield, Lock, User, AlertCircle, X } from 'lucide-react-native';
+import { Shield, Lock, User, AlertCircle, X, Eye, EyeOff } from 'lucide-react-native';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
 
@@ -20,6 +20,7 @@ import { Input } from '@/components/Input';
 import { Button } from '@/components/Button';
 import { LoadingSpinner } from '@/components/LoadingSpinner';
 import { Card } from '@/components/Card';
+import { ErrorCard } from '@/components/ErrorCard';
 import { useAuth } from '@/contexts/AuthContext';
 import { COLORS } from '@/styles/colors';
 import { TYPOGRAPHY } from '@/styles/typography';
@@ -28,12 +29,15 @@ import axios, { AxiosError } from 'axios';
 const { height } = Dimensions.get('window');
 
 export default function LoginScreen() {
+  // ...existing code...
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [fadeAnim] = useState(new Animated.Value(0));
   const [slideAnim] = useState(new Animated.Value(50));
   const [scaleAnim] = useState(new Animated.Value(0.8));
   const [error, setError] = useState<{ message: string, type: 'warning' | 'error' | 'info' | 'success' } | null>(null);
+  const [sessionExpiredMessage, setSessionExpiredMessage] = useState<string | null>(null);
   const { login, isLoading, clearError, error: authError } = useAuth();
 
   interface ApiError {
@@ -65,64 +69,62 @@ export default function LoginScreen() {
     ]).start();
   }, []);
 
-  // Debug useEffect pour surveiller l'état de l'erreur
   useEffect(() => {
     console.log('[LOGIN_DEBUG] Error state changed:', error);
   }, [error]);
 
-  // Surveiller les erreurs du AuthContext et les convertir en ErrorCard
   useEffect(() => {
-    if (authError && !error) {
-      console.log('[LOGIN_DEBUG] AuthContext error detected:', authError);
-      // Déterminer le type d'erreur basé sur le message
-      const errorType = authError.includes('incorrect') || authError.includes('Identifiants')
-        ? 'warning'
-        : 'error';
-      setError({ message: authError, type: errorType });
+    console.log('[SESSION_DEBUG] SessionExpiredMessage state changed:', sessionExpiredMessage);
+  }, [sessionExpiredMessage]);
+
+  useEffect(() => {
+    console.log('[LOGIN_DEBUG] AuthContext error detected:', authError);
+    if (authError) {
+      if (authError.includes('Nouvelle connexion détectée') ||
+        authError.includes('Session expirée') ||
+        authError.includes('Connexion interrompue') ||
+        authError.includes('session') ||
+        authError.includes('Session')) {
+        setSessionExpiredMessage(authError);
+        console.log('[SESSION_DEBUG] Session expired message set:', authError);
+      } else if (!error) {
+        let errorType: 'warning' | 'error' | 'info' | 'success' = 'error';
+        if (authError.includes('incorrect') || authError.includes('Identifiants')) {
+          errorType = 'warning';
+        }
+        setError({ message: authError, type: errorType });
+      }
     }
-  }, [authError, error]);
+  }, [authError]);
 
   const handleLogin = async () => {
-    // 1. Validation des inputs
     if (!identifier.trim()) {
       const errorMsg = 'Identifiant vide';
       console.error('[VALIDATION]', errorMsg);
       setError({ message: errorMsg, type: 'warning' });
       return;
     }
-
     if (!password) {
       const errorMsg = 'Mot de passe vide';
       console.error('[VALIDATION]', errorMsg);
       setError({ message: errorMsg, type: 'warning' });
       return;
     }
-
     console.log('[AUTH] Tentative de connexion initiée', {
       identifier: identifier,
       passwordLength: password.length
     });
-
     try {
-      // 2. Appel au service d'authentification
-      console.log('[AUTH] Appel à login() avec credentials');
-
-      // Effacer les erreurs précédentes avant la tentative
       setError(null);
-
       await login({
         identifier: identifier,
         password: password
       });
-
-      // 3. Succès
       console.log('[AUTH] Connexion réussie', {
         identifier: identifier,
         timestamp: new Date().toISOString()
       });
-
     } catch (error: unknown) {
-      // 4. Gestion des erreurs avec typage fort
       const apiError = extractApiError(error);
       console.error('[AUTH] Erreur de connexion', {
         error: apiError.message,
@@ -130,27 +132,19 @@ export default function LoginScreen() {
         data: apiError.data,
         identifier: identifier
       });
-
-      // 5. Message utilisateur adaptatif
       const userMessage = apiError.status === 401
         ? 'Identifiant ou mot de passe incorrect'
         : apiError.message || 'Erreur de connexion';
-
-      // Déterminer le type d'erreur en fonction du statut
       const errorType = apiError.status === 401 || apiError.status === 404
         ? 'warning'
         : 'error';
-
       console.log('[LOGIN_DEBUG] Setting error state:', { message: userMessage, type: errorType });
       setError({ message: userMessage, type: errorType });
-
-      // 6. Sécurité - effacement du mot de passe
       setPassword('');
       console.log('[SECURITY] Mot de passe effacé après erreur');
     }
   };
 
-  // Ajoutez cette fonction utilitaire pour extraire les erreurs
   const extractApiError = (error: unknown): ApiError => {
     if (axios.isAxiosError(error)) {
       return {
@@ -159,7 +153,6 @@ export default function LoginScreen() {
         data: error.response?.data
       };
     } else if (error instanceof Error) {
-      // Vérifier s'il y a des détails d'erreur du service d'authentification
       const errorDetails = (error as any).details;
       if (errorDetails) {
         return {
@@ -175,7 +168,8 @@ export default function LoginScreen() {
 
   const dismissError = () => {
     setError(null);
-    clearError(); // Efface aussi l'erreur du contexte
+    setSessionExpiredMessage(null);
+    clearError();
   };
 
   const getPasswordStrength = () => {
@@ -213,6 +207,16 @@ export default function LoginScreen() {
       >
         <View style={styles.container}>
           <StatusBar style="light" />
+
+          {/* ErrorCard moderne pour les messages de session */}
+          <ErrorCard
+            visible={!!sessionExpiredMessage}
+            title="Session expirée"
+            message={sessionExpiredMessage || ''}
+            onDismiss={() => setSessionExpiredMessage(null)}
+            duration={8000} // 8 secondes pour bien lire le message
+          />
+
           <LinearGradient
             colors={['#020617', '#0f172a', '#1e293b']}
             style={StyleSheet.absoluteFillObject}
@@ -282,17 +286,14 @@ export default function LoginScreen() {
                 </View>
                 <View style={styles.inputContainer}>
                   <View style={styles.inputWrapper}>
-                    <View style={styles.inputIconContainer}>
-                      <User size={20} color={COLORS.primary} />
-                    </View>
                     <TextInput
                       value={identifier}
-                      onChangeText={(text) => setIdentifier(text)} // Pas de modification de la saisie
+                      onChangeText={(text) => setIdentifier(text)}
                       placeholder="Identifiant (ex: agent123)"
-                      autoCapitalize="none" // Désactive la majuscule automatique
+                      autoCapitalize="none"
                       keyboardType="default"
                       style={{
-                        paddingLeft: 40,
+                        paddingLeft: 44,
                         height: 48,
                         borderRadius: 12,
                         backgroundColor: '#f1f5f9',
@@ -303,19 +304,20 @@ export default function LoginScreen() {
                         marginBottom: 8,
                       }}
                     />
+                    <View style={[{ left: 12, top: 14, zIndex: 2, position: 'absolute' }]}>
+                      <User size={20} color={COLORS.primary} />
+                    </View>
                   </View>
                   <View style={styles.inputWrapper}>
-                    <View style={styles.inputIconContainer}>
-                      <Lock size={20} color={COLORS.primary} />
-                    </View>
                     <TextInput
                       value={password}
                       onChangeText={setPassword}
                       placeholder="Mot de passe"
-                      secureTextEntry
+                      secureTextEntry={!showPassword}
                       autoCapitalize="none"
                       style={{
-                        paddingLeft: 40,
+                        paddingLeft: 44,
+                        paddingRight: 44,
                         height: 48,
                         borderRadius: 12,
                         backgroundColor: '#f1f5f9',
@@ -326,6 +328,20 @@ export default function LoginScreen() {
                         marginBottom: 8,
                       }}
                     />
+                    <View style={[{ left: 12, top: 14, zIndex: 2, position: 'absolute' }]}>
+                      <Lock size={18} color={COLORS.primary} />
+                    </View>
+                    <TouchableOpacity
+                      style={{ position: 'absolute', right: 12, top: 12, zIndex: 2 }}
+                      onPress={() => setShowPassword((prev) => !prev)}
+                      accessibilityLabel={showPassword ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
+                    >
+                      {showPassword ? (
+                        <EyeOff size={22} color={COLORS.primary} />
+                      ) : (
+                        <Eye size={22} color={COLORS.primary} />
+                      )}
+                    </TouchableOpacity>
                   </View>
                   <View style={styles.passwordStrength}>
                     {[1, 2, 3].map((i) => (

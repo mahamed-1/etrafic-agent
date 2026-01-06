@@ -1,5 +1,6 @@
 import { Tabs } from 'expo-router';
-import { FileText, User, HomeIcon } from 'lucide-react-native';
+import { FileText, User, HomeIcon, Bell } from 'lucide-react-native';
+import { NotificationTabIcon } from '@/components/NotificationTabIcon';
 import { COLORS } from '@/styles/colors';
 
 export default function TabNavigator() {
@@ -60,7 +61,17 @@ export default function TabNavigator() {
         options={{
           title: 'Infractions',
           tabBarIcon: ({ size, color }) => (
-            <User size={size} color={color} />
+            <FileText size={size} color={color} />
+          ),
+        }}
+      />
+
+      <Tabs.Screen
+        name="notifications"
+        options={{
+          title: 'Notifications',
+          tabBarIcon: ({ size, color }) => (
+            <NotificationTabIcon size={size} color={color} />
           ),
         }}
       />

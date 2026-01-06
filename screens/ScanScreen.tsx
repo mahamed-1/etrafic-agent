@@ -9,7 +9,7 @@ import {
 import {
     AlertTriangle, DollarSign, Calendar,
     MapPin, User, Car, Clock, ChevronRight,
-    FileX, Shield
+    FileX, Shield, Phone
 } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 
@@ -31,22 +31,12 @@ interface VehiculeRecherche {
     montantTotal: number;
     derniereInfraction: string;
     dateInfraction: string;
-    statut: 'amende_impayee' | 'vol_signale';
+    statut: 'amende_impayee';
     priorite: 'haute' | 'moyenne' | 'faible';
     zone: string;
 }
 
-interface CategorieVehicule {
-    id: string;
-    titre: string;
-    description: string;
-    count: number;
-    couleur: string;
-    icone: React.ComponentType<any>;
-    statut: 'amende_impayee' | 'vol_signale';
-}
-
-// Données statiques de véhicules recherchés
+// Données statiques de véhicules avec PV non payés
 const VEHICULES_RECHERCHES: VehiculeRecherche[] = [
     {
         id: '1',
@@ -125,89 +115,35 @@ const VEHICULES_RECHERCHES: VehiculeRecherche[] = [
         statut: 'amende_impayee',
         priorite: 'haute',
         zone: 'Kenya'
-    },
-    {
-        id: '6',
-        numeroPlaque: 'FF-678-MN',
-        marque: 'Mazda',
-        modele: '3',
-        couleur: 'Vert',
-        proprietaire: 'Kalala Esperance',
-        telephone: '+243 96 456 7890',
-        pvNonPayes: 0,
-        montantTotal: 0,
-        derniereInfraction: 'Vol signalé',
-        dateInfraction: '2025-01-26',
-        statut: 'vol_signale',
-        priorite: 'haute',
-        zone: 'Katuba'
-    },
-    {
-        id: '7',
-        numeroPlaque: 'GG-901-OP',
-        marque: 'Volkswagen',
-        modele: 'Polo',
-        couleur: 'Jaune',
-        proprietaire: 'Ilunga Samuel',
-        pvNonPayes: 0,
-        montantTotal: 0,
-        derniereInfraction: 'Vol signalé',
-        dateInfraction: '2025-01-12',
-        statut: 'vol_signale',
-        priorite: 'haute',
-        zone: 'Kamalondo'
     }
 ];
 
 export default function ScanScreen() {
     const router = useRouter();
 
-    // Calculer les statistiques par catégorie
-    const getCategories = (): CategorieVehicule[] => {
-        const pvNonPayes = VEHICULES_RECHERCHES.filter(v => v.statut === 'amende_impayee');
-        const volsSignales = VEHICULES_RECHERCHES.filter(v => v.statut === 'vol_signale');
-        // const rechercheActive = VEHICULES_RECHERCHES.filter(v => v.statut === 'recherche_active');
+    // Filtrer seulement les véhicules avec PV non payés
+    const vehiculesPVNonPayes = VEHICULES_RECHERCHES.filter(v => v.statut === 'amende_impayee');
+    const totalMontant = vehiculesPVNonPayes.reduce((sum, v) => sum + v.montantTotal, 0);
 
-        return [
-            {
-                id: 'pv_non_payes',
-                titre: 'PV Non Payés',
-                description: 'Véhicules avec amendes impayées',
-                count: pvNonPayes.length,
-                couleur: COLORS.warning,
-                icone: DollarSign,
-                statut: 'amende_impayee'
-            },
-            {
-                id: 'vols_signales',
-                titre: 'Véhicules Volés Signalés',
-                description: 'Véhicules déclarés volés',
-                count: volsSignales.length,
-                couleur: '#8B0000', // Rouge foncé
-                icone: Shield,
-                statut: 'vol_signale'
-            }
-        ];
+    const getPriorityColor = (priorite: 'haute' | 'moyenne' | 'faible') => {
+        switch (priorite) {
+            case 'haute': return '#DC2626'; // Rouge
+            case 'moyenne': return '#F59E0B'; // Orange
+            case 'faible': return '#10B981'; // Vert
+            default: return COLORS.textSecondary;
+        }
     };
 
-    const categories = getCategories();
-    const totalVehicules = VEHICULES_RECHERCHES.length;
-    const totalMontant = VEHICULES_RECHERCHES.reduce((sum, v) => sum + v.montantTotal, 0);
-
-    const handleCategoryPress = (category: CategorieVehicule) => {
-        // Naviguer vers la page de détails avec le statut
-        router.push({
-            pathname: '/vehicle-details' as any,
-            params: {
-                statut: category.statut,
-                titre: category.titre
-            }
-        });
+    const getPriorityIcon = (priorite: 'haute' | 'moyenne' | 'faible') => {
+        return AlertTriangle;
     };
 
     return (
         <View style={styles.container}>
-            <Header title="Véhicules Recherchés" />
+            <Header
+                title="PV Non Payés"
+                subtitle={`${vehiculesPVNonPayes.length} véhicules avec amendes impayées`}
+            />
 
             <ScrollView
                 style={styles.content}
@@ -216,65 +152,107 @@ export default function ScanScreen() {
             >
                 {/* Statistiques générales */}
                 <Card style={styles.summaryCard}>
-                    <Text style={styles.summaryTitle}>Résumé Général</Text>
+                    <Text style={styles.summaryTitle}>Résumé des PV Non Payés</Text>
                     <View style={styles.summaryStats}>
                         <View style={styles.summaryItem}>
                             <Text style={[styles.summaryNumber, { color: COLORS.primary }]}>
-                                {totalVehicules}
+                                {vehiculesPVNonPayes.length}
                             </Text>
-                            <Text style={styles.summaryLabel}>Total Véhicules</Text>
+                            <Text style={styles.summaryLabel}>Véhicules</Text>
+                        </View>
+                        <View style={styles.summaryItem}>
+                            <Text style={[styles.summaryNumber, { color: COLORS.warning }]}>
+                                {totalMontant.toLocaleString()}
+                            </Text>
+                            <Text style={styles.summaryLabel}>DJF Total</Text>
                         </View>
                     </View>
                 </Card>
 
-                {/* Catégories de véhicules */}
-                <Text style={styles.sectionTitle}>Catégories</Text>
+                {/* Liste des véhicules */}
+                <Text style={styles.sectionTitle}>Liste des Véhicules</Text>
 
-                {categories.map((category) => (
-                    <TouchableOpacity
-                        key={category.id}
-                        style={styles.categoryCard}
-                        onPress={() => handleCategoryPress(category)}
-                        activeOpacity={0.7}
-                    >
-                        <Card style={{
-                            ...styles.categoryContent,
-                            borderLeftColor: category.couleur,
-                            backgroundColor: COLORS.surface,
-                        }}>
-                            <View style={styles.categoryHeader}>
-                                <View style={[
-                                    styles.categoryIcon,
-                                    { backgroundColor: category.couleur + '15' }
-                                ]}>
-                                    <category.icone size={20} color={category.couleur} />
-                                </View>
-                                <View style={styles.categoryInfo}>
-                                    <Text style={styles.categoryTitle}>{category.titre}</Text>
-                                    <Text style={styles.categoryDescription}>{category.description}</Text>
-                                </View>
-                                <View style={styles.categoryMeta}>
-                                    <Text style={[styles.categoryCount, { color: category.couleur }]}>
-                                        {category.count}
-                                    </Text>
-                                    <View style={styles.chevronContainer}>
-                                        <ChevronRight size={16} color={COLORS.textLight} />
-                                    </View>
-                                </View>
+                {vehiculesPVNonPayes.map((vehicule) => (
+                    <Card key={vehicule.id} style={styles.vehicleCard}>
+                        {/* En-tête avec plaque et priorité */}
+                        <View style={styles.vehicleHeader}>
+                            <View style={styles.plaqueContainer}>
+                                <Car size={18} color={COLORS.primary} />
+                                <Text style={styles.plaqueText}>{vehicule.numeroPlaque}</Text>
                             </View>
+                            <View style={[styles.priorityBadge, { backgroundColor: getPriorityColor(vehicule.priorite) + '15' }]}>
+                                <AlertTriangle size={12} color={getPriorityColor(vehicule.priorite)} />
+                                <Text style={[styles.priorityText, { color: getPriorityColor(vehicule.priorite) }]}>
+                                    {vehicule.priorite.toUpperCase()}
+                                </Text>
+                            </View>
+                        </View>
 
-                            {category.count > 0 && (
-                                <View style={styles.categoryFooter}>
-                                    <View style={styles.categoryStats}>
-                                        <Text style={styles.categoryStatsText}>
-                                            Cliquez pour voir les détails
-                                        </Text>
-                                    </View>
+                        {/* Informations du véhicule */}
+                        <View style={styles.vehicleInfo}>
+                            <Text style={styles.vehicleModel}>
+                                {vehicule.marque} {vehicule.modele} - {vehicule.couleur}
+                            </Text>
+                            <View style={styles.ownerInfo}>
+                                <User size={14} color={COLORS.textSecondary} />
+                                <Text style={styles.ownerText}>{vehicule.proprietaire}</Text>
+                            </View>
+                            {vehicule.telephone && (
+                                <View style={styles.phoneInfo}>
+                                    <Phone size={14} color={COLORS.textSecondary} />
+                                    <Text style={styles.phoneText}>{vehicule.telephone}</Text>
                                 </View>
                             )}
-                        </Card>
-                    </TouchableOpacity>
+                        </View>
+
+                        {/* Détails des PV */}
+                        <View style={styles.pvDetails}>
+                            <View style={styles.pvRow}>
+                                <View style={styles.pvStat}>
+                                    <Text style={styles.pvStatNumber}>{vehicule.pvNonPayes}</Text>
+                                    <Text style={styles.pvStatLabel}>PV Non Payés</Text>
+                                </View>
+                                <View style={styles.pvStat}>
+                                    <Text style={[styles.pvStatNumber, { color: COLORS.danger }]}>
+                                        {vehicule.montantTotal.toLocaleString()}
+                                    </Text>
+                                    <Text style={styles.pvStatLabel}>DJF</Text>
+                                </View>
+                            </View>
+                        </View>
+
+                        {/* Dernière infraction */}
+                        <View style={styles.lastInfraction}>
+                            <View style={styles.infractionHeader}>
+                                <AlertTriangle size={14} color={COLORS.warning} />
+                                <Text style={styles.infractionTitle}>Dernière infraction</Text>
+                            </View>
+                            <Text style={styles.infractionText}>{vehicule.derniereInfraction}</Text>
+                            <View style={styles.infractionMeta}>
+                                <View style={styles.dateInfo}>
+                                    <Calendar size={12} color={COLORS.textSecondary} />
+                                    <Text style={styles.dateText}>
+                                        {new Date(vehicule.dateInfraction).toLocaleDateString('fr-FR')}
+                                    </Text>
+                                </View>
+                                <View style={styles.locationInfo}>
+                                    <MapPin size={12} color={COLORS.textSecondary} />
+                                    <Text style={styles.locationText}>{vehicule.zone}</Text>
+                                </View>
+                            </View>
+                        </View>
+                    </Card>
                 ))}
+
+                {vehiculesPVNonPayes.length === 0 && (
+                    <Card style={styles.emptyCard}>
+                        <FileX size={48} color={COLORS.textSecondary} />
+                        <Text style={styles.emptyTitle}>Aucun PV non payé</Text>
+                        <Text style={styles.emptyText}>
+                            Tous les véhicules sont en règle avec leurs amendes.
+                        </Text>
+                    </Card>
+                )}
 
             </ScrollView>
         </View>
@@ -333,28 +311,6 @@ const styles = StyleSheet.create({
         marginTop: SPACING.xs,
         textAlign: 'center',
     },
-    infoCard: {
-        backgroundColor: '#fff3cd',
-        borderColor: COLORS.warning,
-        borderWidth: 1,
-        marginBottom: SPACING.lg,
-    },
-    infoHeader: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginBottom: SPACING.sm,
-    },
-    infoTitle: {
-        ...TYPOGRAPHY.body,
-        fontWeight: '600',
-        color: COLORS.textPrimary,
-        marginLeft: SPACING.sm,
-    },
-    infoText: {
-        ...TYPOGRAPHY.body,
-        color: COLORS.textSecondary,
-        lineHeight: 20,
-    },
     sectionTitle: {
         ...TYPOGRAPHY.h4,
         fontSize: 18,
@@ -363,8 +319,12 @@ const styles = StyleSheet.create({
         marginBottom: SPACING.md,
         marginTop: SPACING.sm,
     },
-    categoryCard: {
+
+    // Styles pour les cartes de véhicules
+    vehicleCard: {
         marginBottom: SPACING.md,
+        paddingVertical: SPACING.md,
+        paddingHorizontal: SPACING.lg,
         borderRadius: BORDER_RADIUS.lg,
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 1 },
@@ -372,99 +332,177 @@ const styles = StyleSheet.create({
         shadowRadius: 3,
         elevation: 2,
     },
-    categoryContent: {
-        borderLeftWidth: 4,
-        padding: 0,
-        borderRadius: BORDER_RADIUS.lg,
-        overflow: 'hidden',
+    vehicleHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: SPACING.sm,
     },
-    categoryHeader: {
+    plaqueContainer: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingVertical: SPACING.md,
-        paddingHorizontal: SPACING.lg,
+        backgroundColor: COLORS.primary + '10',
+        paddingHorizontal: SPACING.sm,
+        paddingVertical: SPACING.xs,
+        borderRadius: BORDER_RADIUS.md,
+        borderWidth: 1,
+        borderColor: COLORS.primary + '20',
     },
-    categoryIcon: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
-        justifyContent: 'center',
+    plaqueText: {
+        ...TYPOGRAPHY.body,
+        fontSize: 16,
+        fontWeight: '700',
+        color: COLORS.primary,
+        marginLeft: SPACING.xs,
+    },
+    priorityBadge: {
+        flexDirection: 'row',
         alignItems: 'center',
-        marginRight: SPACING.md,
+        paddingHorizontal: SPACING.sm,
+        paddingVertical: 4,
+        borderRadius: BORDER_RADIUS.sm,
         borderWidth: 1,
         borderColor: 'transparent',
     },
-    categoryInfo: {
-        flex: 1,
-        paddingRight: SPACING.sm,
+    priorityText: {
+        fontSize: 10,
+        fontWeight: '600',
+        marginLeft: 4,
     },
-    categoryTitle: {
-        ...TYPOGRAPHY.h3,
+
+    // Informations du véhicule
+    vehicleInfo: {
+        marginBottom: SPACING.sm,
+    },
+    vehicleModel: {
+        ...TYPOGRAPHY.body,
         fontSize: 15,
         fontWeight: '500',
         color: COLORS.textPrimary,
         marginBottom: SPACING.xs,
     },
-    categoryDescription: {
-        ...TYPOGRAPHY.caption,
-        fontSize: 12,
-        color: COLORS.textSecondary,
-        lineHeight: 16,
-    },
-    categoryMeta: {
+    ownerInfo: {
+        flexDirection: 'row',
         alignItems: 'center',
-        justifyContent: 'center',
-        minWidth: 60,
-    },
-    categoryCount: {
-        ...TYPOGRAPHY.h4,
-        fontSize: 20,
-        fontWeight: '500',
         marginBottom: SPACING.xs,
     },
-    chevronContainer: {
-        padding: SPACING.xs,
-        borderRadius: 12,
-        backgroundColor: COLORS.gray50,
+    ownerText: {
+        ...TYPOGRAPHY.body,
+        fontSize: 14,
+        color: COLORS.textSecondary,
+        marginLeft: SPACING.xs,
     },
-    categoryFooter: {
-        borderTopWidth: 1,
-        borderTopColor: COLORS.gray100,
-        paddingHorizontal: SPACING.lg,
-        paddingVertical: SPACING.sm,
-        backgroundColor: COLORS.gray50,
-    },
-    categoryStats: {
+    phoneInfo: {
+        flexDirection: 'row',
         alignItems: 'center',
     },
-    categoryStatsText: {
+    phoneText: {
+        ...TYPOGRAPHY.body,
+        fontSize: 14,
+        color: COLORS.textSecondary,
+        marginLeft: SPACING.xs,
+    },
+
+    // Détails des PV
+    pvDetails: {
+        backgroundColor: COLORS.gray50,
+        borderRadius: BORDER_RADIUS.md,
+        padding: SPACING.sm,
+        marginBottom: SPACING.sm,
+    },
+    pvRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-around',
+    },
+    pvStat: {
+        alignItems: 'center',
+        flex: 1,
+    },
+    pvStatNumber: {
+        ...TYPOGRAPHY.h4,
+        fontSize: 18,
+        fontWeight: '600',
+        color: COLORS.textPrimary,
+    },
+    pvStatLabel: {
         ...TYPOGRAPHY.caption,
         fontSize: 11,
         color: COLORS.textSecondary,
-        fontStyle: 'italic',
+        marginTop: 2,
     },
-    helpCard: {
-        marginTop: SPACING.lg,
-        marginBottom: SPACING.xl,
+
+    // Dernière infraction
+    lastInfraction: {
+        borderTopWidth: 1,
+        borderTopColor: COLORS.gray100,
+        paddingTop: SPACING.sm,
     },
-    helpHeader: {
+    infractionHeader: {
         flexDirection: 'row',
         alignItems: 'center',
-        marginBottom: SPACING.md,
-    },
-    helpTitle: {
-        ...TYPOGRAPHY.body,
-        fontWeight: '600',
-        color: COLORS.textPrimary,
-        marginLeft: SPACING.sm,
-    },
-    helpContent: {
-        paddingLeft: SPACING.sm,
-    },
-    helpText: {
-        ...TYPOGRAPHY.body,
-        color: COLORS.textSecondary,
         marginBottom: SPACING.xs,
+    },
+    infractionTitle: {
+        ...TYPOGRAPHY.body,
+        fontSize: 13,
+        fontWeight: '500',
+        color: COLORS.warning,
+        marginLeft: SPACING.xs,
+    },
+    infractionText: {
+        ...TYPOGRAPHY.body,
+        fontSize: 14,
+        color: COLORS.textPrimary,
+        marginBottom: SPACING.xs,
+        fontWeight: '500',
+    },
+    infractionMeta: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+    },
+    dateInfo: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        flex: 1,
+    },
+    dateText: {
+        ...TYPOGRAPHY.caption,
+        fontSize: 12,
+        color: COLORS.textSecondary,
+        marginLeft: 4,
+    },
+    locationInfo: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        flex: 1,
+        justifyContent: 'flex-end',
+    },
+    locationText: {
+        ...TYPOGRAPHY.caption,
+        fontSize: 12,
+        color: COLORS.textSecondary,
+        marginLeft: 4,
+    },
+
+    // État vide
+    emptyCard: {
+        alignItems: 'center',
+        paddingVertical: SPACING.xl,
+        paddingHorizontal: SPACING.lg,
+    },
+    emptyTitle: {
+        ...TYPOGRAPHY.h4,
+        fontSize: 16,
+        fontWeight: '600',
+        color: COLORS.textSecondary,
+        marginTop: SPACING.md,
+        marginBottom: SPACING.xs,
+    },
+    emptyText: {
+        ...TYPOGRAPHY.body,
+        fontSize: 14,
+        color: COLORS.textSecondary,
+        textAlign: 'center',
         lineHeight: 20,
     },
 });

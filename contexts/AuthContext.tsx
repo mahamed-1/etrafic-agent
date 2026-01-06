@@ -61,15 +61,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } finally {
       dispatch({ type: 'SET_LOADING', payload: false });
     }
-  };
-
-  useEffect(() => {
+  }; useEffect(() => {
     checkAuth();
     const interval = setInterval(checkAuth, 5 * 60 * 1000);
     return () => clearInterval(interval);
-  }, []);
-
-  const login = async (credentials: LoginCredentials) => {
+  }, []); const login = async (credentials: LoginCredentials) => {
     dispatch({ type: 'LOGIN_START' });
     try {
       const user = await AuthService.login(credentials);

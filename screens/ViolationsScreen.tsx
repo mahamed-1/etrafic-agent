@@ -15,13 +15,14 @@ import {
   Image
 } from 'react-native';
 import {
-  Camera, Plus, X, FileText, Clock, MapPin, Search, AlertCircle
+  Camera, Plus, X, FileText, Clock, MapPin, Search, AlertCircle, ArrowLeft, Phone, User, CheckCircle
 } from 'lucide-react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 
 import { Header } from '@/components/Header';
 import { Card } from '@/components/Card';
 import { Button } from '@/components/Button';
+import { SuccessCard } from '@/components/SuccessCard';
 import { COLORS } from '@/styles/colors';
 import { TYPOGRAPHY } from '@/styles/typography';
 import { SPACING, BORDER_RADIUS } from '@/styles/spacing';
@@ -84,6 +85,8 @@ export default function ViolationsScreen() {
   const [isLoadingViolations, setIsLoadingViolations] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [error, setError] = useState<{ message: string, type: 'warning' | 'error' | 'info' | 'success' } | null>(null);
+  const [showSuccessCard, setShowSuccessCard] = useState(false);
+  const [successMessage, setSuccessMessage] = useState('');
   const router = useRouter();
   const params = useLocalSearchParams();
   const [photoDescriptions, setPhotoDescriptions] = useState<string[]>([]);
@@ -94,7 +97,11 @@ export default function ViolationsScreen() {
     if (paramPlate) setPlate(paramPlate as string);
     if (paramVehicleData) {
       try {
-        setVehicleData(JSON.parse(paramVehicleData as string));
+        const parsedData = JSON.parse(paramVehicleData as string);
+        console.log('🚗 ViolationsScreen - Données véhicule reçues:', parsedData);
+        console.log('🔍 ownerFullname:', parsedData.ownerFullname);
+        console.log('🔍 ownerUsername:', parsedData.ownerUsername);
+        setVehicleData(parsedData);
       } catch (error) {
         console.error('Error parsing vehicle data:', error);
       }
@@ -186,8 +193,17 @@ export default function ViolationsScreen() {
       return;
     }
 
-    if (!vehicleData || !vehicleData.id) {
+    if (!vehicleData || !vehicleData.plaque) {
       setError({ message: 'Aucune donnée véhicule valide', type: 'error' });
+      return;
+    }
+
+    // Validation obligatoire des photos
+    if (photos.length === 0) {
+      setError({
+        message: 'Au moins une photo est obligatoire pour générer un PV. Veuillez prendre une photo du véhicule.',
+        type: 'warning'
+      });
       return;
     }
 
@@ -214,14 +230,24 @@ export default function ViolationsScreen() {
 
       // Appel de la méthode createPV originale
       const pv = await createPV(
-        vehicleData.id,
+        vehicleData.plaque,
         infractionIds,
         photoFiles,
         photoDescriptions.join(','),
         location
       );
-      setError({ message: `PV créé avec succès !\nNuméro: ${pv.id}`, type: 'success' });
-      resetForm();
+
+      // Afficher le SuccessCard professionnel
+      setSuccessMessage(`PV créé avec succès !\nNuméro: ${pv.id}`);
+      setShowSuccessCard(true);
+
+      // Redirection automatique vers dashboard après 2.5 secondes
+      setTimeout(() => {
+        setShowSuccessCard(false);
+        resetForm(); // Effacer toutes les données du formulaire
+        router.replace('/'); // Redirection vers dashboard
+      }, 2500);
+
     } catch (error) {
       let message = 'Erreur lors de la création du PV';
       if (error instanceof Error) {
@@ -229,11 +255,23 @@ export default function ViolationsScreen() {
       }
       setError({ message, type: 'error' });
     }
-  }; const resetForm = () => {
+  };
+
+  const resetForm = () => {
     setViolations([]);
     setPhotos([]);
-    router.back();
     setPhotoDescriptions([]);
+    setError(null); // Effacer aussi les messages d'erreur
+  };
+
+  const goBackToControl = () => {
+    // Naviguer vers control avec la plaque pour recharger les données
+    router.replace({
+      pathname: '/(tabs)/control',
+      params: {
+        plate: plate
+      }
+    });
   };
 
 
@@ -309,7 +347,22 @@ export default function ViolationsScreen() {
       <Header
         title="Constater Infractions"
         subtitle={plate ? `Véhicule: ${plate}` : 'Sélectionner les infractions'}
+        onNotificationPress={() => router.push({
+          pathname: '/(tabs)/notifications',
+          params: { filter: 'unread' }
+        })}
       />
+
+      {/* Navigation Button */}
+      <View style={styles.navigationContainer}>
+        <Button
+          title="Retour au Contrôle"
+          onPress={goBackToControl}
+          variant="secondary"
+          icon={<ArrowLeft size={20} color={COLORS.primary} />}
+          style={styles.backButton}
+        />
+      </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {/* Error Card */}
@@ -349,18 +402,66 @@ export default function ViolationsScreen() {
 
         {/* Vehicle Info */}
         {vehicleData && (
-          <Card>
-            <View style={styles.vehicleHeader}>
-              <View>
-                <Text style={styles.vehiclePlate}>{vehicleData.plaque}</Text>
-                <Text style={styles.vehicleOwner}>{vehicleData.ownerUsername}</Text>
+          <Card style={styles.cardSpacing}>
+            <View style={styles.vehicleCardCompact}>
+              {/* Header compact avec accent coloré */}
+              <View style={styles.vehicleHeaderCompact}>
+                <View style={styles.vehicleHeaderLeftCompact}>
+                  <View style={styles.plateContainerCompact}>
+                    <Text style={styles.vehiclePlateCompact}>{vehicleData.plaque}</Text>
+                    <View style={styles.plateAccentCompact} />
+                  </View>
+                  <Text style={styles.vehicleBrandCompact}>{vehicleData.brand} {vehicleData.model}</Text>
+                </View>
+                <View style={styles.vehicleYearBadgeCompact}>
+                  <Text style={styles.vehicleYearTextCompact}>{vehicleData.manufactureYear || 'N/A'}</Text>
+                </View>
               </View>
-              <View style={[
-                styles.vehicleTypeBadge,
-                { backgroundColor: getCategoryColor('document') }
-              ]}>
-                <Text style={styles.vehicleTypeText}>{vehicleData.brand || 'Non spécifié'}</Text>
+
+              {/* Informations essentielles en ligne */}
+              <View style={styles.vehicleMainInfoCompact}>
+                <View style={styles.vehicleInfoRowCompact}>
+                  <View style={styles.iconContainerCompact}>
+                    <User size={16} color="#FFFFFF" />
+                  </View>
+                  <View style={styles.vehicleInfoContentCompact}>
+                    <Text style={styles.vehicleInfoLabelCompact}>Propriétaire</Text>
+                    <Text style={styles.vehicleInfoValueCompact}>
+                      {vehicleData.ownerFullname || vehicleData.ownerUsername || vehicleData.ownerUserId || 'Non spécifié'}
+                    </Text>
+                  </View>
+                </View>
+
+                {(vehicleData.phoneNumber) && (
+                  <View style={styles.vehicleInfoRowCompact}>
+                    <View style={[styles.iconContainerCompact, styles.iconContainerGreen]}>
+                      <Phone size={16} color="#FFFFFF" />
+                    </View>
+                    <View style={styles.vehicleInfoContentCompact}>
+                      <Text style={styles.vehicleInfoLabelCompact}>Contact</Text>
+                      <Text style={styles.vehicleInfoValueCompact}>
+                        {vehicleData.phoneNumber}
+                      </Text>
+                    </View>
+                  </View>
+                )}
+
+                {/* Châssis en badge compact */}
+                <View style={styles.chassisSectionCompact}>
+                  <View style={styles.chassisBadgeCompact}>
+                    <Text style={styles.chassisLabelCompact}>Châssis</Text>
+                    <Text style={styles.chassisValueCompact}>{vehicleData.chassisNumber}</Text>
+                  </View>
+                </View>
               </View>
+
+              {/* Actions rapides */}
+              {/* <View style={styles.quickActionsCompact}>
+                <View style={styles.statusIndicatorCompact}>
+                  <View style={styles.statusDotCompact} />
+                  <Text style={styles.statusTextCompact}>Contrôle en cours</Text>
+                </View>
+              </View> */}
             </View>
           </Card>
         )}
@@ -370,11 +471,12 @@ export default function ViolationsScreen() {
           title="Ajouter Infraction"
           onPress={() => setShowAddModal(true)}
           icon={<Plus size={24} color={COLORS.surface} />}
+          style={styles.cardSpacing}
         />
 
         {/* Selected Violations */}
         {violations.length > 0 && (
-          <Card>
+          <Card style={styles.cardSpacing}>
             <Text style={styles.violationsTitle}>Infractions constatées</Text>
             {violations.map((violation) => (
               <View key={violation.id} style={styles.violationItem}>
@@ -429,23 +531,52 @@ export default function ViolationsScreen() {
         )}
 
         {/* Photos */}
-        <Card>
-          <Text style={styles.photosTitle}>Photos obligatoires</Text>
-          <View style={styles.photosGrid}>
-            <TouchableOpacity style={styles.photoButton} onPress={takePhoto}>
-              <Camera size={32} color={COLORS.textSecondary} />
-              <Text style={styles.photoButtonText}>Prendre Photo</Text>
-            </TouchableOpacity>
-            {/* <TouchableOpacity style={styles.photoButton} onPress={pickPhoto}>
-              <Camera size={32} color={COLORS.textSecondary} />
-              <Text style={styles.photoButtonText}>Depuis Galerie</Text>
-            </TouchableOpacity> */}
+        <Card style={styles.cardSpacing}>
+          <View style={styles.photoHeaderContainer}>
+            <View style={styles.photoTitleContainer}>
+              <Text style={styles.photosTitle}>Photos obligatoires</Text>
+              <Text style={styles.photoSubtitle}>Minimum 1 photo requise</Text>
+            </View>
+            <View style={styles.photoRequiredBadge}>
+              <Text style={styles.photoRequiredText}>OBLIGATOIRE</Text>
+            </View>
           </View>
+
+          {photos.length === 0 && (
+            <View style={styles.photoWarningContainer}>
+              <AlertCircle size={16} color={COLORS.warning} />
+              <Text style={styles.photoWarningText}>
+                Au moins une photo du véhicule est obligatoire pour générer le PV
+              </Text>
+            </View>
+          )}
+
+          <View style={styles.photosGrid}>
+            <TouchableOpacity
+              style={[
+                styles.photoButton,
+                photos.length === 0 ? styles.photoButtonRequired : styles.photoButtonNormal
+              ]}
+              onPress={takePhoto}
+            >
+              <Camera size={32} color={photos.length === 0 ? COLORS.danger : COLORS.textSecondary} />
+              <Text style={[
+                styles.photoButtonText,
+                photos.length === 0 ? styles.photoButtonTextRequired : {}
+              ]}>
+                {photos.length === 0 ? 'Photo Obligatoire' : 'Ajouter Photo'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
           {photos.length > 0 && (
             <>
-              <Text style={styles.photosCount}>
-                {photos.length} photo{photos.length > 1 ? 's' : ''} enregistrée{photos.length > 1 ? 's' : ''}
-              </Text>
+              <View style={styles.photoSuccessContainer}>
+                <CheckCircle size={16} color={COLORS.success} />
+                <Text style={styles.photosCount}>
+                  {photos.length} photo{photos.length > 1 ? 's' : ''} enregistrée{photos.length > 1 ? 's' : ''} ✓
+                </Text>
+              </View>
               <ScrollView horizontal style={styles.photoPreviewScroll} contentContainerStyle={styles.photoPreviewContainer} showsHorizontalScrollIndicator={false}>
                 {photos.map((uri, idx) => (
                   <View key={uri + idx} style={styles.photoPreviewItem}>
@@ -468,7 +599,7 @@ export default function ViolationsScreen() {
         </Card>
 
         {/* Control Info */}
-        <Card>
+        <Card style={styles.cardSpacing}>
           <Text style={styles.controlInfoTitle}>Informations du contrôle</Text>
           <View style={styles.controlInfoItem}>
             <Clock size={16} color={COLORS.textSecondary} />
@@ -494,10 +625,14 @@ export default function ViolationsScreen() {
               style={styles.actionButton}
             />
             <Button
-              title="Générer PV"
+              title={photos.length === 0 ? "Photo Obligatoire" : "Générer PV"}
               onPress={generateTicketHandler}
-              variant="danger"
-              icon={<FileText size={20} color={COLORS.surface} />}
+              variant={photos.length === 0 ? "secondary" : "danger"}
+              disabled={photos.length === 0}
+              icon={photos.length === 0 ?
+                <Camera size={20} color={COLORS.textSecondary} /> :
+                <FileText size={20} color={COLORS.surface} />
+              }
               style={styles.actionButton}
             />
           </View>
@@ -565,6 +700,15 @@ export default function ViolationsScreen() {
           )}
         </View>
       </Modal>
+
+      {/* SuccessCard professionnel */}
+      <SuccessCard
+        visible={showSuccessCard}
+        title="PV Généré !"
+        message={successMessage}
+        onDismiss={() => setShowSuccessCard(false)}
+        duration={2500}
+      />
     </View>
   );
 }
@@ -578,14 +722,89 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: SPACING.lg,
   },
+  navigationContainer: {
+    paddingHorizontal: SPACING.lg,
+    paddingTop: SPACING.md,
+    paddingBottom: SPACING.sm,
+    backgroundColor: COLORS.background,
+  },
+  backButton: {
+    alignSelf: 'flex-start',
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+    paddingHorizontal: SPACING.lg,
+    shadowColor: COLORS.gray300,
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  cardSpacing: {
+    marginBottom: SPACING.lg,
+  },
+
+  // Styles pour la carte véhicule compacte (identique à ControlScreen)
+  vehicleCard: {
+    borderRadius: BORDER_RADIUS.md,
+  },
+  vehicleHeaderCompact: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: SPACING.md,
+    paddingBottom: SPACING.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.gray100,
+  },
   vehicleHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
+    marginBottom: SPACING.md,
+    paddingBottom: SPACING.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.gray100,
   },
-  vehiclePlate: {
+  vehicleHeaderLeft: {
+    flex: 1,
+  },
+  vehiclePlateCompact: {
     ...TYPOGRAPHY.h3,
     color: COLORS.textPrimary,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  vehicleBrandCompact: {
+    ...TYPOGRAPHY.body,
+    color: COLORS.textSecondary,
+    fontWeight: '500',
+  },
+  vehiclePlate: {
+    ...TYPOGRAPHY.h4,
+    color: COLORS.textPrimary,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  vehicleBrand: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.textSecondary,
+    fontWeight: '500',
+  },
+  vehicleYearBadge: {
+    backgroundColor: COLORS.primary,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  vehicleYearText: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.surface,
+    fontWeight: '600',
+    fontSize: 11,
   },
   vehicleOwner: {
     ...TYPOGRAPHY.body,
@@ -602,16 +821,139 @@ const styles = StyleSheet.create({
     color: COLORS.surface,
     fontWeight: '600',
   },
-  violationsTitle: {
-    ...TYPOGRAPHY.h4,
+
+  // Informations principales compactes
+  vehicleMainInfoCompact: {
+    gap: SPACING.sm,
+  },
+  vehicleInfoRowCompact: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderRadius: BORDER_RADIUS.sm,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  vehicleInfoContentCompact: {
+    marginLeft: SPACING.sm,
+    flex: 1,
+  },
+  vehicleInfoLabelCompact: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.textSecondary,
+    fontWeight: '500',
+    fontSize: 10,
+  },
+  vehicleInfoValueCompact: {
+    ...TYPOGRAPHY.caption,
     color: COLORS.textPrimary,
-    marginBottom: SPACING.lg,
+    fontWeight: '600',
+    fontSize: 12,
+  },
+
+  // Section châssis compacte
+  chassisSectionCompact: {
+    backgroundColor: '#F1F5F9',
+    borderRadius: BORDER_RADIUS.sm,
+    padding: SPACING.sm,
+    marginTop: SPACING.sm,
+    alignItems: 'center',
+  },
+  chassisLabelCompact: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.textSecondary,
+    fontWeight: '500',
+    fontSize: 10,
+    marginBottom: 2,
+  },
+  chassisValueCompact: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.textPrimary,
+    fontWeight: '600',
+    fontSize: 11,
+    fontFamily: 'monospace',
+  },
+
+  // Section des détails du véhicule (anciens styles gardés pour compatibilité)
+  vehicleDetailsSection: {
+    gap: SPACING.md,
+  },
+  vehicleDetailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.md,
+    backgroundColor: '#F8FAFC',
+    borderRadius: BORDER_RADIUS.md,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  vehicleDetailIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: SPACING.md,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  vehicleDetailContent: {
+    flex: 1,
+  },
+  vehicleDetailLabel: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.textSecondary,
+    fontWeight: '500',
+    marginBottom: 2,
+  },
+  vehicleDetailValue: {
+    ...TYPOGRAPHY.body,
+    color: COLORS.textPrimary,
+    fontWeight: '600',
+  },
+
+  // Informations techniques
+  vehicleTechInfo: {
+    flexDirection: 'row',
+    backgroundColor: '#F1F5F9',
+    borderRadius: BORDER_RADIUS.md,
+    padding: SPACING.md,
+    marginTop: SPACING.sm,
+  },
+  techInfoColumn: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  techInfoLabel: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.textSecondary,
+    fontWeight: '500',
+    marginBottom: 4,
+  },
+  techInfoValue: {
+    ...TYPOGRAPHY.body,
+    color: COLORS.textPrimary,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  violationsTitle: {
+    ...TYPOGRAPHY.body,
+    fontWeight: '600',
+    color: COLORS.textPrimary,
+    marginBottom: SPACING.md,
   },
   violationItem: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: SPACING.md,
+    paddingVertical: SPACING.sm,
     borderBottomWidth: 1,
     borderBottomColor: COLORS.gray100,
   },
@@ -627,23 +969,26 @@ const styles = StyleSheet.create({
     ...TYPOGRAPHY.body,
     fontWeight: '600',
     color: COLORS.textPrimary,
+    fontSize: 14,
   },
   violationDescription: {
     ...TYPOGRAPHY.caption,
     color: COLORS.textSecondary,
     marginTop: 2,
+    fontSize: 12,
   },
   violationAmount: {
     ...TYPOGRAPHY.caption,
     color: COLORS.danger,
     fontWeight: '600',
-    marginTop: 4,
+    marginTop: 3,
+    fontSize: 12,
   },
   categoryDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    marginRight: SPACING.md,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginRight: SPACING.sm,
   },
   removeButton: {
     padding: SPACING.sm,
@@ -651,8 +996,8 @@ const styles = StyleSheet.create({
   totalContainer: {
     borderTopWidth: 1,
     borderTopColor: COLORS.gray200,
-    paddingTop: SPACING.lg,
-    marginTop: SPACING.lg,
+    paddingTop: SPACING.md,
+    marginTop: SPACING.md,
   },
   totalRow: {
     flexDirection: 'row',
@@ -667,26 +1012,30 @@ const styles = StyleSheet.create({
     marginTop: SPACING.sm,
   },
   totalLabel: {
-    ...TYPOGRAPHY.body,
+    ...TYPOGRAPHY.caption,
     color: COLORS.textSecondary,
+    fontSize: 13,
   },
   totalAmount: {
-    ...TYPOGRAPHY.body,
+    ...TYPOGRAPHY.caption,
     fontWeight: '600',
     color: COLORS.textPrimary,
+    fontSize: 13,
   },
   totalLabelFinal: {
-    ...TYPOGRAPHY.h4,
+    ...TYPOGRAPHY.body,
     color: COLORS.textPrimary,
+    fontWeight: '600',
   },
   totalAmountFinal: {
-    ...TYPOGRAPHY.h3,
+    ...TYPOGRAPHY.h4,
     color: COLORS.danger,
   },
   photosTitle: {
-    ...TYPOGRAPHY.h4,
+    ...TYPOGRAPHY.body,
+    fontWeight: '600',
     color: COLORS.textPrimary,
-    marginBottom: SPACING.lg,
+    marginBottom: SPACING.md,
   },
   photosGrid: {
     flexDirection: 'row',
@@ -697,7 +1046,7 @@ const styles = StyleSheet.create({
     borderColor: COLORS.gray300,
     borderStyle: 'dashed',
     borderRadius: BORDER_RADIUS.md,
-    padding: SPACING.xxl,
+    padding: SPACING.lg,
     flex: 1,
     marginHorizontal: 4,
     alignItems: 'center',
@@ -706,6 +1055,7 @@ const styles = StyleSheet.create({
     ...TYPOGRAPHY.caption,
     color: COLORS.textSecondary,
     marginTop: SPACING.sm,
+    fontSize: 12,
   },
   photosCount: {
     ...TYPOGRAPHY.caption,
@@ -714,42 +1064,43 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   photoPreviewScroll: {
-    marginTop: 12,
-    marginBottom: 4,
-    maxHeight: 110,
+    marginTop: 10,
+    marginBottom: 6,
+    maxHeight: 100,
   },
   photoPreviewContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 4,
+    paddingVertical: 6,
   },
   photoPreviewItem: {
     alignItems: 'center',
-    marginRight: 12,
+    marginRight: 10,
     position: 'relative',
   },
   photoPreviewImage: {
-    width: 80,
-    height: 80,
+    width: 70,
+    height: 70,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: COLORS.gray200,
-    marginBottom: 4,
+    marginBottom: 3,
     backgroundColor: COLORS.gray100,
   },
   photoPreviewLabel: {
     ...TYPOGRAPHY.caption,
     color: COLORS.textSecondary,
     textAlign: 'center',
-    maxWidth: 80,
+    maxWidth: 70,
+    fontSize: 10,
   },
   removePhotoButton: {
     position: 'absolute',
     top: 0,
     right: 0,
     backgroundColor: COLORS.surface,
-    borderRadius: 10,
-    padding: 2,
+    borderRadius: 12,
+    padding: 3,
     zIndex: 2,
     elevation: 2,
   },
@@ -758,6 +1109,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: COLORS.textPrimary,
     marginBottom: SPACING.md,
+    fontSize: 13,
   },
   controlInfoItem: {
     flexDirection: 'row',
@@ -768,6 +1120,7 @@ const styles = StyleSheet.create({
     ...TYPOGRAPHY.caption,
     color: COLORS.textSecondary,
     marginLeft: SPACING.sm,
+    fontSize: 12,
   },
   actionButtons: {
     flexDirection: 'row',
@@ -775,7 +1128,7 @@ const styles = StyleSheet.create({
   },
   actionButton: {
     flex: 1,
-    marginHorizontal: 4,
+    marginHorizontal: 6,
   },
   bottomSpacer: {
     height: 80,
@@ -857,7 +1210,7 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
     fontSize: 12,
   },
-  // Error Card Styles
+  // Error Card Styles - Compactes
   errorCard: {
     marginBottom: SPACING.lg,
     borderLeftWidth: 4,
@@ -906,17 +1259,180 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   errorTitle: {
-    ...TYPOGRAPHY.h5,
+    ...TYPOGRAPHY.body,
+    fontWeight: '600',
     color: COLORS.textPrimary,
-    marginBottom: SPACING.xs,
+    marginBottom: 3,
+    fontSize: 13,
   },
   errorMessage: {
-    ...TYPOGRAPHY.body,
+    ...TYPOGRAPHY.caption,
     color: COLORS.textSecondary,
-    lineHeight: 20,
+    lineHeight: 18,
+    fontSize: 12,
   },
   dismissButton: {
-    padding: SPACING.xs,
+    padding: SPACING.sm,
     borderRadius: BORDER_RADIUS.sm,
+  },
+
+  // === STYLES COMPACTS POUR VIOLATIONSSCREEN ===
+  vehicleCardCompact: {
+    borderRadius: BORDER_RADIUS.md,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  vehicleHeaderLeftCompact: {
+    flex: 1,
+  },
+  plateContainerCompact: {
+    marginBottom: 4,
+  },
+  plateAccentCompact: {
+    height: 2,
+    backgroundColor: '#EF4444',
+    borderRadius: 1,
+    width: '40%',
+    marginTop: 2,
+  },
+  vehicleYearBadgeCompact: {
+    backgroundColor: '#EF4444',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  vehicleYearTextCompact: {
+    ...TYPOGRAPHY.caption,
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 12,
+  },
+
+  // Informations compactes avec icônes colorées
+  iconContainerCompact: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#3B82F6',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: SPACING.sm,
+  },
+  iconContainerGreen: {
+    backgroundColor: '#10B981',
+  },
+
+  // Châssis en badge
+  chassisBadgeCompact: {
+    backgroundColor: '#F3F4F6',
+    borderRadius: BORDER_RADIUS.sm,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    alignItems: 'center',
+    marginTop: SPACING.sm,
+  },
+
+  // Actions rapides
+  quickActionsCompact: {
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+    paddingTop: SPACING.sm,
+    marginTop: SPACING.sm,
+  },
+  statusIndicatorCompact: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: SPACING.sm,
+  },
+  statusDotCompact: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#F59E0B',
+  },
+  statusTextCompact: {
+    ...TYPOGRAPHY.caption,
+    color: '#F59E0B',
+    fontWeight: '600',
+    fontSize: 11,
+    textTransform: 'uppercase',
+  },
+
+  // === STYLES POUR PHOTOS OBLIGATOIRES ===
+  photoHeaderContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: SPACING.md,
+  },
+  photoTitleContainer: {
+    flex: 1,
+  },
+  photoSubtitle: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.textSecondary,
+    fontSize: 11,
+    fontStyle: 'italic',
+    marginTop: 2,
+  },
+  photoRequiredBadge: {
+    backgroundColor: COLORS.danger,
+    borderRadius: BORDER_RADIUS.sm,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 4,
+  },
+  photoRequiredText: {
+    ...TYPOGRAPHY.caption,
+    color: COLORS.surface,
+    fontWeight: '700',
+    fontSize: 10,
+  },
+  photoWarningContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEF3C7',
+    borderRadius: BORDER_RADIUS.sm,
+    padding: SPACING.md,
+    marginBottom: SPACING.md,
+    borderLeftWidth: 4,
+    borderLeftColor: COLORS.warning,
+    gap: SPACING.sm,
+  },
+  photoWarningText: {
+    ...TYPOGRAPHY.caption,
+    color: '#92400E',
+    fontWeight: '500',
+    flex: 1,
+  },
+  photoButtonRequired: {
+    borderWidth: 2,
+    borderColor: COLORS.danger,
+    borderStyle: 'dashed',
+    backgroundColor: '#FEF2F2',
+  },
+  photoButtonNormal: {
+    borderWidth: 2,
+    borderColor: COLORS.gray300,
+    borderStyle: 'dashed',
+  },
+  photoButtonTextRequired: {
+    color: COLORS.danger,
+    fontWeight: '600',
+  },
+  photoSuccessContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F0FDF4',
+    borderRadius: BORDER_RADIUS.sm,
+    padding: SPACING.sm,
+    marginBottom: SPACING.sm,
+    gap: SPACING.sm,
+  },
+  buttonDisabled: {
+    opacity: 0.6,
   },
 });
